@@ -1,0 +1,149 @@
+package com.example.flashcardslitemobile
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+
+@Composable
+fun HomeScreen(
+    decks: List<Deck>,
+    onClearDecks: () -> Unit,
+    onAddDeck: (String) -> Unit,
+    onOpenDeck: (Deck) -> Unit,
+    onDeleteDeck: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // Deck Name the user typed
+    var deckName by remember { mutableStateOf("") }
+
+    // confirm deck deletion when not null
+    var deckToDelete by remember { mutableStateOf<Deck?>(null) }
+
+    // feedback massage
+    var message by remember { mutableStateOf("") }
+
+    // Column and it formating
+    Column(
+        modifier = modifier
+            .padding(16.dp)
+            .fillMaxSize()
+    ) {
+        Text(text = "Flashcards Lite Mobile")
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // input where the user types the deck name
+        OutlinedTextField(
+            value = deckName,
+            onValueChange = { deckName = it; message = "" },
+            label = { Text("New deck name") }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Create a deck after checking the validation
+        Button(onClick = {
+            val name = deckName.trim()
+            when {
+                name.isBlank() -> message = "Name can't be empty"
+
+                // check if the name already exists
+                decks.any { it.name.equals(name, true) } ->
+                    message = "Deck name already exits"
+
+                // add deck to the list
+                else -> {
+                    onAddDeck(name)
+                    message = "Deck '$name' created!"
+                    deckName = ""
+                }
+            }
+        }) {
+            Text("Create Deck")
+        }
+
+        // show the result message
+        if (message.isNotBlank()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(message)
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(text = "Decks:")
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Lazy column
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // list of decks
+            items(decks, key = { it.id }) { d ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // open Deck Screen
+                    Button(
+                        onClick = { onOpenDeck(d) },
+                        modifier = Modifier.weight(1f)
+                    ) { Text(d.name) }
+
+                    // delete card button (send to confirmation)
+                    Button(
+                        onClick = { deckToDelete = d },
+                        modifier = Modifier.width(96.dp)
+                    ) { Text("Delete") }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Clear everything (decks and cards)
+        Button(onClick = onClearDecks ) { Text("Delete All Decks") }
+    }
+
+    // confirm deck deletion
+    deckToDelete?.let { deck ->
+        // alert notification
+        AlertDialog(
+            onDismissRequest = { deckToDelete = null},
+            title = { Text("Delete deck?") },
+            text = { Text("Delete '${deck.name}'? This cannot be undone.") },
+            // confirms deck deletion
+            confirmButton = {
+                Button(onClick = {
+                    onDeleteDeck(deck.id)
+                    deckToDelete = null
+                }) { Text("Yes") }
+            },
+            // dismiss deck deletion
+            dismissButton = {
+                Button(onClick = { deckToDelete = null }) { Text("No")}
+            }
+        )
+    }
+}
