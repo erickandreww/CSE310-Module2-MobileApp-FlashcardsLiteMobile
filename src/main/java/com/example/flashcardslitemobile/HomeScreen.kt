@@ -31,6 +31,8 @@ fun HomeScreen(
     onAddDeck: (String) -> Unit,
     onOpenDeck: (Deck) -> Unit,
     onDeleteDeck: (Int) -> Unit,
+    onCloudTest: () -> Unit,
+    onfirestoreTest: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     // Deck Name the user typed
@@ -122,7 +124,15 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Clear everything (decks and cards)
+        Button(onClick = onCloudTest ) {
+        Text("Cloud Test")
+        }
+
+        Button(onClick = onfirestoreTest ) {
+            Text("Firestore Test")
+        }
+
+    // Clear everything (decks and cards)
         Button(onClick = onClearDecks ) { Text("Delete All Decks") }
     }
 

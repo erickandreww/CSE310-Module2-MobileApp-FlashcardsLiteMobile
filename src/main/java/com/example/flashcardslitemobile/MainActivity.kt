@@ -22,6 +22,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.flashcardslitemobile.ui.theme.FlashcardsLiteMobileTheme
 import kotlinx.coroutines.launch
+import com.google.firebase.FirebaseApp
 
 class MainActivity : ComponentActivity() {
 
@@ -31,6 +32,10 @@ class MainActivity : ComponentActivity() {
 
         // Just a simple log so I can see in Logcat that the app started
         Log.d("MyTag", "App started")
+
+        val app = FirebaseApp.initializeApp(this)
+        Log.d("MyTag", "FirebaseApp init = ${app != null}")
+
         enableEdgeToEdge()
         setContent {
             // These are my main "app state" variables:
@@ -41,6 +46,11 @@ class MainActivity : ComponentActivity() {
             // These counters help me generate IDs when I create new decks/cards
             var nextDeckId by remember { mutableIntStateOf(1) }
             var nextCardId by remember { mutableIntStateOf(1) }
+
+            val firebase = remember { FirebaseService() }
+            var status by remember { mutableStateOf("") }
+            var currentUserEmail by remember { mutableStateOf(firebase.currentEmail())}
+            var notes by remember { mutableStateOf(listOf<Pair<String, String>>()) }
 
             // Context needed for DataStore (local storage)
             val context = LocalContext.current
@@ -107,6 +117,14 @@ class MainActivity : ComponentActivity() {
                                 // Open deck screen using the deck ID
                                 onOpenDeck = { deck ->
                                     navController.navigate("deck/${deck.id}")
+                                },
+
+                                onCloudTest = {
+                                    navController.navigate("cloudTest")
+                                },
+
+                                onfirestoreTest = {
+                                    navController.navigate("firestoreTest")
                                 },
 
                                 // Delete one deck and all cards of the deck
@@ -204,6 +222,79 @@ class MainActivity : ComponentActivity() {
                                     onBack = { navController.popBackStack() }
                                 )
                             }
+                        }
+
+                        composable("cloudTest") {
+                            CloudTestScreen(
+                                onSignUp = { email, password ->
+                                    firebase.signUp(email, password) { msg ->
+                                        status = msg
+                                        currentUserEmail = firebase.currentEmail()
+                                    }
+
+                                },
+                                onSignIn = { email, password ->
+                                    firebase.signIn(email, password) { msg ->
+                                        status = msg
+                                        currentUserEmail = firebase.currentEmail()
+                                    }
+                                },
+                                onSignOut = {
+                                    firebase.signOut { msg ->
+                                        status = msg
+                                        currentUserEmail = firebase.currentEmail()
+                                    }
+                                },
+                                onBack = { navController.popBackStack() },
+                                currentUserEmail = currentUserEmail,
+                                statusMessage = status
+                            )
+                        }
+
+                        composable("firestoreTest") {
+                            fun refreshNotes() {
+                                firebase.loadMyTestNotes(
+                                    onResult = { list ->
+                                        notes = list
+                                        status = "Loaded ${list.size} notes"
+                                    },
+                                    onError = { err ->
+                                        status = err
+                                    }
+                                )
+                            }
+
+                            LaunchedEffect(Unit) {
+                                refreshNotes()
+                            }
+
+                            FirestoreTestScreen(
+                                testNotes = notes,
+                                onAddNote = { note ->
+                                    firebase.addTestNote(note) { msg ->
+                                        status = msg
+                                        refreshNotes()
+                                    }
+                                },
+                                onUpdateNote = { noteId, newText ->
+                                    firebase.updateTestNotes(
+                                        noteId, newText)
+                                    { msg ->
+                                        status = msg
+                                        refreshNotes()
+                                    }
+                                },
+                                onDeleteNote = {noteId ->
+                                    firebase.deleteTestNote(noteId) { msg ->
+                                        status = msg
+                                        refreshNotes()
+                                    }
+                                },
+                                onRefresh = { refreshNotes() },
+                                onBack = { navController.popBackStack() },
+                                currentUserEmail = currentUserEmail,
+                                statusMessage = status
+                            )
                         }
                     }
                 }
