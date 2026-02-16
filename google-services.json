@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "418655685960",
+    "project_id": "flashcardslitemobile-3161f",
+    "storage_bucket": "flashcardslitemobile-3161f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:418655685960:android:09baf596039bb78a28f77d",
+        "android_client_info": {
+          "package_name": "com.example.flashcardslitemobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBMXnjoNrV1HQOfjoPUn2eyDo3BUE9casU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
