@@ -98,7 +98,7 @@ fun DeckScreen(
             if (editingCardId == null) {
                 // add new card
                 onAddCard(deck.id, f, b)
-                message = "Creating card..."
+                message = "Card Created!"
             }
             else {
                 // if a card is selected, update that card
@@ -110,7 +110,7 @@ fun DeckScreen(
                 }
                 val updated = original.copy(front = f, back = b)
                 onUpdateCard(cardId, updated)
-                message = "Saving changes..."
+                message = "Card edited successfully"
             }
 
             // clear inputs and exit edit mode
@@ -205,7 +205,7 @@ fun DeckScreen(
                                 message = ""
                             }
                             onDeleteCard(cardId)
-                            message = "Deleting..."
+                            message = "Card Deleted!"
                         }) {
                             Text("Delete")
                         }

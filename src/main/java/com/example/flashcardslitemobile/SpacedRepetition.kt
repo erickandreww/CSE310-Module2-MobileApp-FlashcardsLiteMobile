@@ -6,7 +6,7 @@ import java.time.LocalDate
 fun todayString(): String = LocalDate.now().toString()
 
 // This function updates a card based on the rating the user picked during review
-fun applyRatingLite(card: Card, rating: Int): Card {
+fun applyRatingCloud(card: CloudCard, rating: Int): CloudCard {
     // Today's date, used to calculate the new due date
     val today = LocalDate.now()
 

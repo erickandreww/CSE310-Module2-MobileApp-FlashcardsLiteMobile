@@ -157,7 +157,7 @@ class FirebaseService {
 
     fun loadCards(
         deckId: String,
-        onResult: (List<CloudCard>) -> Unit,
+        onResult: (List<Pair<String, CloudCard>>) -> Unit,
         onError: (String) -> Unit
     ) {
         val uid = requiredUid(onError) ?: return
@@ -168,7 +168,7 @@ class FirebaseService {
             .get()
             .addOnSuccessListener { snap ->
                 val items = snap.documents.map { doc ->
-                    CloudCard(
+                    val card = CloudCard(
                         id = doc.id,
                         deckId = doc.getString("deckId").orEmpty(),
                         front = doc.getString("front").orEmpty(),
@@ -177,6 +177,7 @@ class FirebaseService {
                         dueDate = doc.getString("dueDate").orEmpty(),
                         lastReviewed = doc.getString("lastReviewed")
                     )
+                    doc.id to card
                 }
                 onResult(items)
             }

@@ -169,9 +169,9 @@ class MainActivity : ComponentActivity() {
 
                                 fun refreshCards() {
                                     firebase.loadCards(
-                                        deckId = deck.id,
+                                        deckId = deckId,
                                         onResult = { list ->
-                                            cloudCards = list.map { it.id to it}
+                                            cloudCards = list
                                             status = "Loaded ${list.size} cards"
                                         },
                                         onError = { err -> status = err }
@@ -217,7 +217,7 @@ class MainActivity : ComponentActivity() {
 
                                     // Navigate to review screen
                                     onReview = {
-                                        status = "Review (Cloud) coming next"
+                                        navController.navigate("review/${deckId}")
                                     },
 
                                     // refresh all cards
@@ -232,35 +232,41 @@ class MainActivity : ComponentActivity() {
                         }
 
                         // REVIEW SCREEN ROUTE
-//                        composable("review/{deckId}") { backStackEntry ->
-//                            // Read deckId from the route
-//                            val deckId = backStackEntry
-//                                .arguments?.getString("deckId")?.toIntOrNull()
-//
-//                            // Find the deck
-//                            val deck = decks.firstOrNull { it.id == deckId }
-//
-//                            // If missing, show error screen
-//                            if (deck == null) {
-//                                ErrorScreen(onBack = { navController.popBackStack() } )
-//                            } else {
-//                                ReviewScreen(
-//                                    deck = deck,
-//                                    cards = cards,
-//
-//                                    // Update card after rating
-//                                    onUpdateCard = { updated ->
-//                                        cards = cards.map {
-//                                            if (it.id == updated.id) updated else it
-//                                        }
-//                                        scope.launch { store.save(decks, cards) }
-//                                    },
-//
-//                                    // Go back
-//                                    onBack = { navController.popBackStack() }
-//                                )
-//                            }
-//                        }
+                        composable("review/{deckId}") { backStackEntry ->
+                            val deckId = backStackEntry.arguments?.getString("deckId").orEmpty()
+                            val deck = cloudDecks.firstOrNull { it.id == deckId }
+
+                            if (deck == null) {
+                                ErrorScreen(onBack = { navController.popBackStack() })
+                                return@composable
+                            }
+
+                            fun refreshCards() {
+                                firebase.loadCards(
+                                    deckId = deckId,
+                                    onResult = { list ->
+                                        // list should be List<Pair<String, CloudCard>>
+                                        cloudCards = list
+                                        status = "Loaded ${list.size} cards"
+                                    },
+                                    onError = { err -> status = err }
+                                )
+                            }
+
+                            LaunchedEffect(deckId) { refreshCards() }
+
+                            ReviewScreen(
+                                deck = deck,
+                                cards = cloudCards,
+                                onUpdateCard = { docId, updated ->
+                                    firebase.updateCard(docId, updated) { msg ->
+                                        status = msg
+                                        refreshCards()
+                                    }
+                                },
+                                onBack = { navController.popBackStack() }
+                            )
+                        }
                     }
                 }
             }
