@@ -23,13 +23,15 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun DeckScreen(
-    deck: Deck,
-    cards: List<Card>,
-    onAddCard: (deckId: Int, front: String, back: String) -> Unit,
+    deck: CloudDeck,
+    cards: List<Pair<String, CloudCard>>,
+    onAddCard: (deckId: String, front: String, back: String) -> Unit,
+    onUpdateCard: (cardId: String, updated: CloudCard) -> Unit,
+    onDeleteCard: (cardId: String) -> Unit,
+    onRefreshCards: (deckId: String) -> Unit,
+    onReview: (String) -> Unit,
     onBack: () -> Unit,
-    onReview: (Int) -> Unit,
-    onUpdateCard: (Card) -> Unit,
-    onDeleteCard: (Int) -> Unit,
+    statusMessage: String,
     modifier: Modifier = Modifier
 ) {
     // what the user types in the Front and Back input
@@ -38,29 +40,25 @@ fun DeckScreen(
 
     // if this is null we are adding a new card and
     // if this has an id then we are editing that specific card
-    var editingCardId by remember { mutableStateOf<Int?>(null) }
+    var editingCardId by remember { mutableStateOf<String?>(null) }
 
     // feedback message for the user
     var message by remember { mutableStateOf("") }
 
-    // get only the cards that belong to this deck
-    val deckCards = cards.filter { it.deckId == deck.id }
-
     // Deck screen layout
-    Column(modifier = modifier
-        .padding(16.dp)
-        .fillMaxSize()
+    Column(modifier = modifier.padding(16.dp).fillMaxSize()
     ) {
         // header info
         Text(text = "Deck: ${deck.name}")
-        Text("Cards in this deck: ${deckCards.size}")
+        Text("Cards in this deck: ${cards.size}")
         Spacer(modifier = Modifier.height(12.dp))
 
         // input for the card front
         OutlinedTextField(
             value = front,
             onValueChange = { front = it; message = "" },
-            label = { Text("Front") }
+            label = { Text("Front") },
+            modifier = modifier.fillMaxWidth()
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -69,7 +67,8 @@ fun DeckScreen(
         OutlinedTextField(
             value = back,
             onValueChange = { back = it; message = "" },
-            label = { Text("Back") }
+            label = { Text("Back") },
+            modifier = modifier.fillMaxWidth()
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -85,10 +84,10 @@ fun DeckScreen(
             }
 
             // check duplicates, but ignore the card we are editing (so it doesn't block itself)
-            val duplicate = deckCards
-                .any { it.front.equals(f, true)
-                        && it.back.equals(b, true)
-                        && it.id != editingCardId
+            val duplicate = cards.any { (cardId, c) ->
+                c.front.equals(f, true) &&
+                    c.back.equals(b, true) &&
+                    cardId != editingCardId
                 }
             if (duplicate) {
                 message = "This card already exists."
@@ -99,20 +98,28 @@ fun DeckScreen(
             if (editingCardId == null) {
                 // add new card
                 onAddCard(deck.id, f, b)
-                message = "Card added!"
+                message = "Creating card..."
             }
             else {
                 // if a card is selected, update that card
-                val updated = deckCards.first { it.id == editingCardId }.copy(front = f, back = b)
-                onUpdateCard(updated)
-                message = "Card updated!"
+                val cardId = editingCardId!!
+                val original = cards.firstOrNull { it.first == cardId }?.second
+                if (original == null) {
+                    message = "Could not find card to edit (please, refresh and try again)"
+                    return@Button
+                }
+                val updated = original.copy(front = f, back = b)
+                onUpdateCard(cardId, updated)
+                message = "Saving changes..."
             }
 
             // clear inputs and exit edit mode
             front = ""
             back = ""
             editingCardId = null
-        }) {
+        },
+            modifier = Modifier.fillMaxWidth()
+        ) {
             // change the button text depending on add/edit mode
             Text(if (editingCardId == null) "Add Card" else "Save Changes")
         }
@@ -121,12 +128,15 @@ fun DeckScreen(
         if(editingCardId != null) {
             Spacer(modifier = Modifier.height(8.dp))
             // cancel edit and reset inputs
-            Button(onClick = {
-                front = ""
-                back = ""
-                editingCardId = null
-                message = "Edit cancelled"
-            }) {
+            Button(
+                onClick = {
+                    front = ""
+                    back = ""
+                    editingCardId = null
+                    message = "Edit cancelled"
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text("Cancel Edit")
             }
         }
@@ -137,13 +147,25 @@ fun DeckScreen(
             Text(message)
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        if (statusMessage.isNotBlank()) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(statusMessage)
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Button(
+            onClick = { onRefreshCards(deck.id) },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Refresh Cards") }
+
+        Spacer(modifier = Modifier.height(12.dp))
 
         Text("Cards:")
         Spacer(modifier = Modifier.height(8.dp))
 
         // list of cards in this deck
-        if (deckCards.isEmpty()) {
+        if (cards.isEmpty()) {
             Text("No Cards yet!")
         } else {
             // LazyColumn = better list for many cards
@@ -153,7 +175,7 @@ fun DeckScreen(
                     .weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(deckCards, key = { it.id }) { c ->
+                items(cards, key = { it.first }) { (cardId, c) ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -168,21 +190,22 @@ fun DeckScreen(
                         Button(onClick = {
                             front = c.front
                             back = c.back
-                            editingCardId = c.id
-                            message = "Editing card ${c.id}"
+                            editingCardId = cardId
+                            message = "Editing card"
                         }) {
                             Text("Edit")
                         }
 
                         // delete the card
                         Button(onClick = {
-                            if (editingCardId == c.id) {
+                            if (editingCardId == cardId) {
                                 front = ""
                                 back = ""
                                 editingCardId = null
                                 message = ""
                             }
-                            onDeleteCard(c.id)
+                            onDeleteCard(cardId)
+                            message = "Deleting..."
                         }) {
                             Text("Delete")
                         }
@@ -194,11 +217,14 @@ fun DeckScreen(
         Spacer(modifier = Modifier.height(16.dp))
 
         // go to review screen for deck
-        Button(onClick = { onReview(deck.id) }) { Text("Review Due Cards") }
+        Button(
+            onClick = { onReview(deck.id) },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("Review Due Cards") }
 
         Spacer(modifier = Modifier.height(16.dp))
 
         // go back to Home Screen
-        Button(onClick = onBack) { Text("Back") }
+        Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) { Text("Back") }
     }
 }

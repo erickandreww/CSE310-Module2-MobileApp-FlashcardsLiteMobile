@@ -26,38 +26,42 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun HomeScreen(
-    decks: List<Deck>,
-    onClearDecks: () -> Unit,
+    decks: List<CloudDeck>,
     onAddDeck: (String) -> Unit,
-    onOpenDeck: (Deck) -> Unit,
-    onDeleteDeck: (Int) -> Unit,
-    onCloudTest: () -> Unit,
-    onfirestoreTest: () -> Unit,
+    onOpenDeck: (CloudDeck) -> Unit,
+    onDeleteDeck: (String) -> Unit,
+    onRefresh: () -> Unit,
+    onSignOut: () -> Unit,
+    currentUserEmail: String?,
+    statusMessage: String,
     modifier: Modifier = Modifier
 ) {
     // Deck Name the user typed
     var deckName by remember { mutableStateOf("") }
 
     // confirm deck deletion when not null
-    var deckToDelete by remember { mutableStateOf<Deck?>(null) }
+    var deckToDelete by remember { mutableStateOf<CloudDeck?>(null) }
 
     // feedback massage
     var message by remember { mutableStateOf("") }
 
     // Column and it formating
-    Column(
-        modifier = modifier
-            .padding(16.dp)
-            .fillMaxSize()
+    Column(modifier = modifier.padding(16.dp).fillMaxSize()
     ) {
         Text(text = "Flashcards Lite Mobile")
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Text("User: ${currentUserEmail ?: "Not logged in"}")
+        if (statusMessage.isNotBlank()) Text(statusMessage)
+
         Spacer(modifier = Modifier.height(12.dp))
 
         // input where the user types the deck name
         OutlinedTextField(
             value = deckName,
             onValueChange = { deckName = it; message = "" },
-            label = { Text("New deck name") }
+            label = { Text("New deck name") },
+            modifier = modifier.fillMaxWidth()
         )
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -75,11 +79,11 @@ fun HomeScreen(
                 // add deck to the list
                 else -> {
                     onAddDeck(name)
-                    message = "Deck '$name' created!"
+                    message = "Creating deck..."
                     deckName = ""
                 }
             }
-        }) {
+        }, modifier = Modifier.fillMaxWidth()) {
             Text("Create Deck")
         }
 
@@ -95,9 +99,7 @@ fun HomeScreen(
 
         // Lazy column
         LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
+            modifier = Modifier.fillMaxWidth().weight(1f),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             // list of decks
@@ -124,16 +126,13 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        Button(onClick = onCloudTest ) {
-        Text("Cloud Test")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(onClick = onRefresh, modifier = Modifier.weight(1f)) { Text("Refresh") }
+            Button(onClick = onSignOut, modifier = Modifier.weight(1f)) { Text("Sign Out") }
         }
-
-        Button(onClick = onfirestoreTest ) {
-            Text("Firestore Test")
-        }
-
-    // Clear everything (decks and cards)
-        Button(onClick = onClearDecks ) { Text("Delete All Decks") }
     }
 
     // confirm deck deletion
@@ -142,7 +141,7 @@ fun HomeScreen(
         AlertDialog(
             onDismissRequest = { deckToDelete = null},
             title = { Text("Delete deck?") },
-            text = { Text("Delete '${deck.name}'? This cannot be undone.") },
+            text = { Text("Delete '${deck.name}'? This will also delete its cards.") },
             // confirms deck deletion
             confirmButton = {
                 Button(onClick = {

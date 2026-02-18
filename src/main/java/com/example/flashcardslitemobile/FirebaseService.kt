@@ -1,15 +1,28 @@
 package com.example.flashcardslitemobile
 
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 
 class FirebaseService {
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
-    val db: FirebaseFirestore = FirebaseFirestore.getInstance()
+    private val db: FirebaseFirestore = FirebaseFirestore.getInstance()
 
     fun currentEmail(): String? = auth.currentUser?.email
+    fun currentUid(): String? = auth.currentUser?.uid
 
+    private fun requiredUid(onError: (String) -> Unit): String? {
+        val uid = currentUid()
+        if (uid == null) onError("You need to be logged in")
+        return uid
+    }
+
+    private fun userDoc(uid: String) = db.collection("users").document(uid)
+    private fun decksCol(uid: String) = userDoc(uid).collection("decks")
+    private fun cardsCol(uid: String) = userDoc(uid).collection("cards")
+
+    // AUTH
     fun signUp(email: String, password: String, onResult: (String) -> Unit) {
         auth.createUserWithEmailAndPassword(email, password)
             .addOnSuccessListener { onResult("Signed up!") }
@@ -27,65 +40,175 @@ class FirebaseService {
         onResult("Signed Out!")
     }
 
-    fun addTestNote(text: String, onResult: (String) -> Unit) {
-        val email = currentEmail() ?: run {
-            onResult("You need to be logged in.")
-            return
-        }
+    //// DECKS
+    fun addDeck(name: String, onResult: (String) -> Unit) {
+        val uid = requiredUid(onResult) ?: return
 
         val data = hashMapOf(
-            "text" to text,
-            "owner" to email,
-            "updatedAt" to System.currentTimeMillis()
+            "name" to name,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
         )
 
-        db.collection("test_notes")
+        decksCol(uid)
             .add(data)
-            .addOnSuccessListener { onResult("Note added!") }
-            .addOnFailureListener { e -> onResult("Add failed: ${e.message}") }
+            .addOnSuccessListener { onResult("Deck added!")}
+            .addOnFailureListener { e -> onResult("Add failed: ${e.message}")}
     }
 
-    fun loadMyTestNotes(
-        onResult: (List<Pair<String, String>>) -> Unit,
+    fun loadDecks(
+        onResult: (List<CloudDeck>) -> Unit,
         onError: (String) -> Unit
     ) {
-        val email = currentEmail() ?: run {
-            onError("You need to be logged in.")
-            return
-        }
+        val uid = requiredUid(onError) ?: return
 
-        db.collection("test_notes")
-            .whereEqualTo("owner", email)
-            .orderBy("updatedAt", Query.Direction.DESCENDING)
+
+        decksCol(uid)
+            .orderBy("createdAt", Query.Direction.ASCENDING)
             .get()
             .addOnSuccessListener { snap ->
                 val items = snap.documents.map { doc ->
-                    val text = doc.getString("text").orEmpty()
-                    doc.id to text
+                    CloudDeck(
+                        id = doc.id,
+                        name = doc.getString("name").orEmpty()
+                    )
                 }
                 onResult(items)
             }
             .addOnFailureListener { e -> onError("Load failed: ${e.message}")}
     }
 
-    fun updateTestNotes(noteId: String, newText: String, onResult: (String) -> Unit) {
-        db.collection("test_notes")
-            .document(noteId)
-            .update(
-                mapOf(
-                    "text" to newText,
-                    "updatedAt" to System.currentTimeMillis()
-                )
-            )
-            .addOnSuccessListener { onResult("Note updated!") }
+    fun updateDeck(deckId: String, newName: String, onResult: (String) -> Unit) {
+        val uid = requiredUid(onResult) ?: return
+
+        val data = mapOf(
+            "name" to newName,
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+
+        decksCol(uid)
+            .document(deckId)
+            .update(data)
+            .addOnSuccessListener { onResult("Deck updated!") }
             .addOnFailureListener { e -> onResult("Update failed: ${e.message}") }
     }
 
-    fun deleteTestNote(noteId: String, onResult: (String) -> Unit) {
-        db.collection("test_notes")
-            .document(noteId)
+    // Deletes the deck doc AND all cards with deckId == deckDocId
+    fun deleteDeck(deckId: String, onResult: (String) -> Unit) {
+        val uid = requiredUid(onResult) ?: return
+
+        // find all cards that belong to this deck
+        cardsCol(uid)
+            .whereEqualTo("deckId", deckId)
+            .get()
+            .addOnSuccessListener { snap ->
+                // batch delete those cards
+                val batch = db.batch()
+                snap.documents.forEach { doc ->
+                    batch.delete(doc.reference)
+                }
+
+                // commit the card deletions first
+                batch.commit()
+                    .addOnSuccessListener {
+
+                        // delete the deck document
+                        decksCol(uid)
+                            .document(deckId)
+                            .delete()
+                            .addOnSuccessListener { onResult("Deck and cards Deleted!") }
+                            .addOnFailureListener { e -> onResult("Deck Delete failed: ${e.message}") }
+                    }
+                    .addOnFailureListener { e -> onResult("Card delete failed: ${e.message}") }
+            }
+            .addOnFailureListener { e -> onResult("Load cards failed: ${e.message}") }
+    }
+
+    //// CARDS
+    fun addCard(
+        deckId: String,
+        front: String,
+        back: String,
+        intervalDays: Int,
+        dueDate: String,
+        lastReviewed: String?,
+        onResult: (String) -> Unit
+    ) {
+        val uid = requiredUid(onResult) ?: return
+
+        val data = hashMapOf(
+            "deckId" to deckId,
+            "front" to front,
+            "back" to back,
+            "intervalDays" to intervalDays,
+            "dueDate" to dueDate,
+            "lastReviewed" to lastReviewed,
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+
+        cardsCol(uid)
+            .add(data)
+            .addOnSuccessListener { doc ->
+                onResult("Card added! (id: ${doc.id})")
+            }
+            .addOnFailureListener { e -> onResult("Add failed: ${e.message}") }
+    }
+
+    fun loadCards(
+        deckId: String,
+        onResult: (List<CloudCard>) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val uid = requiredUid(onError) ?: return
+
+        cardsCol(uid)
+            .whereEqualTo("deckId", deckId)
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .get()
+            .addOnSuccessListener { snap ->
+                val items = snap.documents.map { doc ->
+                    CloudCard(
+                        id = doc.id,
+                        deckId = doc.getString("deckId").orEmpty(),
+                        front = doc.getString("front").orEmpty(),
+                        back = doc.getString("back").orEmpty(),
+                        intervalDays = (doc.getLong("intervalDays") ?: 1L).toInt(),
+                        dueDate = doc.getString("dueDate").orEmpty(),
+                        lastReviewed = doc.getString("lastReviewed")
+                    )
+                }
+                onResult(items)
+            }
+            .addOnFailureListener { e -> onError("Load failed: ${e.message}") }
+    }
+
+    fun updateCard(docId: String, updated: CloudCard, onResult: (String) -> Unit) {
+        val uid = requiredUid(onResult) ?: return
+
+        val data = mapOf(
+            "front" to updated.front,
+            "back" to updated.back,
+            "intervalDays" to updated.intervalDays,
+            "dueDate" to updated.dueDate,
+            "lastReviewed" to updated.lastReviewed,
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+
+        cardsCol(uid)
+            .document(docId)
+            .update(data)
+            .addOnSuccessListener { onResult("Card updated!") }
+            .addOnFailureListener { e -> onResult("Update Failed: ${e.message}") }
+    }
+
+    fun deleteCard(docId: String, onResult: (String) -> Unit) {
+        val uid = requiredUid(onResult) ?: return
+
+        cardsCol(uid)
+            .document(docId)
             .delete()
-            .addOnSuccessListener { onResult("Note Deleted!") }
+            .addOnSuccessListener { onResult("Card Deleted!") }
             .addOnFailureListener { e -> onResult("Delete failed: ${e.message}") }
     }
 

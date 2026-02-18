@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -40,37 +39,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             // These are my main "app state" variables:
             // Using remember + mutableState so Compose updates the UI when values change
-            var decks by remember { mutableStateOf( listOf<Deck>())}
-            var cards by remember { mutableStateOf( listOf<Card>())}
-
-            // These counters help me generate IDs when I create new decks/cards
-            var nextDeckId by remember { mutableIntStateOf(1) }
-            var nextCardId by remember { mutableIntStateOf(1) }
+            var cloudDecks by remember { mutableStateOf(emptyList<CloudDeck>()) }
+            var cloudCards by remember { mutableStateOf(emptyList<Pair<String, CloudCard>>()) }
 
             val firebase = remember { FirebaseService() }
             var status by remember { mutableStateOf("") }
             var currentUserEmail by remember { mutableStateOf(firebase.currentEmail())}
-            var notes by remember { mutableStateOf(listOf<Pair<String, String>>()) }
-
-            // Context needed for DataStore (local storage)
-            val context = LocalContext.current
-            // DataStoreManager handles saving/loading my decks/cards from the phone storage
-            val store = remember { DataStoreManager(context) }
-            // Coroutine scope so I can call save/load from button clicks
-            val scope = rememberCoroutineScope()
-
-            // This runs one time when the UI starts, it load saved data
-            LaunchedEffect(Unit) {
-                // store.load() returns decks and cards
-                val (loadedDecks, loadedCards) = store.load()
-                // Put loaded data into variables
-                decks = loadedDecks
-                cards = loadedCards
-
-                // Update the next IDs so I don't reuse IDs after restarting the app
-                nextDeckId = (decks.maxOfOrNull { it.id } ?: 0) + 1
-                nextCardId = (cards.maxOfOrNull { it.id } ?: 0) + 1
-            }
 
             // App theme (colors, typography, etc.)
             FlashcardsLiteMobileTheme {
@@ -80,149 +54,14 @@ class MainActivity : ComponentActivity() {
                 // Scaffold gives a basic layout structure and padding from system bars
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
 
+                    val start = if (firebase.currentUid() != null) "home" else "cloudTest"
+
                     // Where we define all the screens routes in the app
                     NavHost(
                         navController = navController,
-                        startDestination = "home",
+                        startDestination = start,
                         modifier = Modifier.padding(innerPadding)
                     ) {
-
-                        // HOME SCREEN ROUTE
-                        composable("home") {
-                            HomeScreen(
-                                decks = decks,
-
-                                // Add a deck
-                                onAddDeck = { name ->
-                                    val newDeck = Deck(id = nextDeckId, name = name)
-                                    nextDeckId++
-                                    decks = decks + newDeck
-
-                                    scope.launch { store.save(decks, cards) }
-                                },
-
-                                // Clear decks and cards
-                                onClearDecks = {
-                                    decks = emptyList()
-                                    cards = emptyList()
-                                    nextDeckId = 1
-                                    nextCardId = 1
-
-                                    scope.launch {
-                                        store.clear()
-                                        store.save(decks, cards)
-                                    }
-                                },
-
-                                // Open deck screen using the deck ID
-                                onOpenDeck = { deck ->
-                                    navController.navigate("deck/${deck.id}")
-                                },
-
-                                onCloudTest = {
-                                    navController.navigate("cloudTest")
-                                },
-
-                                onfirestoreTest = {
-                                    navController.navigate("firestoreTest")
-                                },
-
-                                // Delete one deck and all cards of the deck
-                                onDeleteDeck = { deckId ->
-                                    decks = decks.filterNot { it.id == deckId }
-                                    cards = cards.filterNot { it.deckId == deckId}
-                                    scope.launch { store.save(decks, cards) }
-                                }
-                            )
-                        }
-
-                        // DECK SCREEN ROUTE
-                        composable("deck/{deckId}") { backStackEntry ->
-
-                            // Read deckId of the route
-                            val deckId = backStackEntry
-                                .arguments?.getString("deckId")?.toIntOrNull()
-
-                            // Find the deck
-                            val deck = decks.firstOrNull { it.id == deckId }
-
-                            // If the deck doesn't exist, show an error screen
-                            if (deck == null) {
-                                ErrorScreen(onBack = { navController.popBackStack() })
-                            } else {
-                                DeckScreen(
-                                    deck = deck,
-                                    cards = cards,
-
-                                    // Add card to this deck
-                                    onAddCard = { dId, front, back ->
-                                        val newCard = Card(
-                                            id = nextCardId,
-                                            deckId = dId,
-                                            front = front,
-                                            back = back
-                                        )
-                                        nextCardId++
-                                        cards = cards + newCard
-
-                                        scope.launch { store.save(decks, cards) }
-                                    },
-
-                                    // Navigate to review screen
-                                    onReview = {
-                                        navController.navigate("review/$deckId")
-                                    },
-
-                                    // Update a card
-                                    onUpdateCard = { updated ->
-                                        cards = cards.map {
-                                            if (it.id == updated.id) updated else it
-                                        }
-                                        scope.launch { store.save(decks, cards) }
-                                    },
-
-                                    // Delete a card
-                                    onDeleteCard = { cardId ->
-                                        cards = cards.filterNot { it.id == cardId}
-                                        scope.launch { store.save(decks, cards) }
-                                    },
-
-                                    // Go back
-                                    onBack = { navController.popBackStack() }
-                                )
-                            }
-                        }
-
-                        // REVIEW SCREEN ROUTE
-                        composable("review/{deckId}") { backStackEntry ->
-                            // Read deckId from the route
-                            val deckId = backStackEntry
-                                .arguments?.getString("deckId")?.toIntOrNull()
-
-                            // Find the deck
-                            val deck = decks.firstOrNull { it.id == deckId }
-
-                            // If missing, show error screen
-                            if (deck == null) {
-                                ErrorScreen(onBack = { navController.popBackStack() } )
-                            } else {
-                                ReviewScreen(
-                                    deck = deck,
-                                    cards = cards,
-
-                                    // Update card after rating
-                                    onUpdateCard = { updated ->
-                                        cards = cards.map {
-                                            if (it.id == updated.id) updated else it
-                                        }
-                                        scope.launch { store.save(decks, cards) }
-                                    },
-
-                                    // Go back
-                                    onBack = { navController.popBackStack() }
-                                )
-                            }
-                        }
 
                         composable("cloudTest") {
                             CloudTestScreen(
@@ -230,13 +69,18 @@ class MainActivity : ComponentActivity() {
                                     firebase.signUp(email, password) { msg ->
                                         status = msg
                                         currentUserEmail = firebase.currentEmail()
+                                        navController.navigate("home") {
+                                            popUpTo("cloudTest") { inclusive = true }
+                                        }
                                     }
-
                                 },
                                 onSignIn = { email, password ->
                                     firebase.signIn(email, password) { msg ->
                                         status = msg
                                         currentUserEmail = firebase.currentEmail()
+                                        navController.navigate("home") {
+                                            popUpTo("cloudTest") { inclusive = true }
+                                        }
                                     }
                                 },
                                 onSignOut = {
@@ -251,51 +95,172 @@ class MainActivity : ComponentActivity() {
                             )
                         }
 
-                        composable("firestoreTest") {
-                            fun refreshNotes() {
-                                firebase.loadMyTestNotes(
+                        // HOME SCREEN ROUTE
+                        composable("home") {
+
+                            fun refreshDecks() {
+                                firebase.loadDecks(
                                     onResult = { list ->
-                                        notes = list
-                                        status = "Loaded ${list.size} notes"
+                                        cloudDecks = list
+                                        status = "Loaded ${list.size} decks"
                                     },
-                                    onError = { err ->
-                                        status = err
-                                    }
+                                    onError = { err -> status = err }
                                 )
                             }
 
-                            LaunchedEffect(Unit) {
-                                refreshNotes()
-                            }
+                            LaunchedEffect(Unit) { refreshDecks() }
 
-                            FirestoreTestScreen(
-                                testNotes = notes,
-                                onAddNote = { note ->
-                                    firebase.addTestNote(note) { msg ->
+                            HomeScreen(
+                                decks = cloudDecks,
+
+                                // Add a deck
+                                onAddDeck = { name ->
+                                    firebase.addDeck(name) { msg ->
                                         status = msg
-                                        refreshNotes()
+                                        refreshDecks()
                                     }
                                 },
-                                onUpdateNote = { noteId, newText ->
-                                    firebase.updateTestNotes(
-                                        noteId, newText)
-                                    { msg ->
+
+                                // Open deck screen using the deck ID
+                                onOpenDeck = { deck ->
+                                    navController.navigate("deck/${deck.id}")
+                                },
+
+                                // Delete one deck and all cards of the deck
+                                onDeleteDeck = { deckId ->
+                                    firebase.deleteDeck(deckId) { msg ->
                                         status = msg
-                                        refreshNotes()
+                                        refreshDecks()
                                     }
                                 },
-                                onDeleteNote = {noteId ->
-                                    firebase.deleteTestNote(noteId) { msg ->
+
+                                onRefresh = { refreshDecks() },
+
+                                onSignOut = {
+                                    firebase.signOut { msg ->
                                         status = msg
-                                        refreshNotes()
+                                        currentUserEmail = null
+                                        cloudDecks = emptyList()
+                                        cloudCards = emptyList()
+                                        navController.navigate("cloudTest") {
+                                            popUpTo("home") { inclusive = true }
+                                        }
                                     }
                                 },
-                                onRefresh = { refreshNotes() },
-                                onBack = { navController.popBackStack() },
+
                                 currentUserEmail = currentUserEmail,
                                 statusMessage = status
                             )
                         }
+
+                        // DECK SCREEN ROUTE
+                        composable("deck/{deckId}") { backStackEntry ->
+
+                            // Read deckId of the route
+                            val deckId = backStackEntry.arguments?.getString("deckId").orEmpty()
+
+                            // Find the deck
+                            val deck = cloudDecks.firstOrNull { it.id == deckId }
+
+                            // If the deck doesn't exist, show an error screen
+                            if (deck == null) {
+                                ErrorScreen(onBack = { navController.popBackStack() })
+                            } else {
+
+                                fun refreshCards() {
+                                    firebase.loadCards(
+                                        deckId = deck.id,
+                                        onResult = { list ->
+                                            cloudCards = list.map { it.id to it}
+                                            status = "Loaded ${list.size} cards"
+                                        },
+                                        onError = { err -> status = err }
+                                    )
+                                }
+
+                                LaunchedEffect(deck.id) { refreshCards() }
+
+                                DeckScreen(
+                                    deck = deck,
+                                    cards = cloudCards,
+
+                                    // Add card to this deck
+                                    onAddCard = { dId, front, back ->
+                                        firebase.addCard(
+                                            deckId = dId,
+                                            front = front,
+                                            back = back,
+                                            intervalDays = 1,
+                                            dueDate = todayString(),
+                                            lastReviewed = null
+                                        ) { msg ->
+                                            status = msg
+                                            refreshCards()
+                                        }
+                                    },
+
+                                    // Update a card
+                                    onUpdateCard = { cardId, updated ->
+                                        firebase.updateCard(cardId, updated) { msg ->
+                                            status = msg
+                                            refreshCards()
+                                        }
+                                    },
+
+                                    // Delete a card
+                                    onDeleteCard = { cardId ->
+                                        firebase.deleteCard(cardId) { msg ->
+                                            status = msg
+                                            refreshCards()
+                                        }
+                                    },
+
+                                    // Navigate to review screen
+                                    onReview = {
+                                        status = "Review (Cloud) coming next"
+                                    },
+
+                                    // refresh all cards
+                                    onRefreshCards = { refreshCards() },
+
+                                    // Go back
+                                    onBack = { navController.popBackStack() },
+
+                                    statusMessage = status
+                                )
+                            }
+                        }
+
+                        // REVIEW SCREEN ROUTE
+//                        composable("review/{deckId}") { backStackEntry ->
+//                            // Read deckId from the route
+//                            val deckId = backStackEntry
+//                                .arguments?.getString("deckId")?.toIntOrNull()
+//
+//                            // Find the deck
+//                            val deck = decks.firstOrNull { it.id == deckId }
+//
+//                            // If missing, show error screen
+//                            if (deck == null) {
+//                                ErrorScreen(onBack = { navController.popBackStack() } )
+//                            } else {
+//                                ReviewScreen(
+//                                    deck = deck,
+//                                    cards = cards,
+//
+//                                    // Update card after rating
+//                                    onUpdateCard = { updated ->
+//                                        cards = cards.map {
+//                                            if (it.id == updated.id) updated else it
+//                                        }
+//                                        scope.launch { store.save(decks, cards) }
+//                                    },
+//
+//                                    // Go back
+//                                    onBack = { navController.popBackStack() }
+//                                )
+//                            }
+//                        }
                     }
                 }
             }
