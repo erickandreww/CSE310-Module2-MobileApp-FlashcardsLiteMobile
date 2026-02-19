@@ -17,6 +17,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import java.time.LocalDate
+
+fun isDue(dueDate: String): Boolean {
+    val due = runCatching { LocalDate.parse(dueDate) }.getOrNull()
+    return due == null || !due.isAfter(LocalDate.now())
+}
 
 @Composable
 fun ReviewScreen(
@@ -26,15 +32,13 @@ fun ReviewScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // today's date as a String
-    val today = todayString()
 
     // The list of cards to review in the session.
     // It only includes cards that are due today (or earlier).
     var sessionCards by remember(deck.id, cards) {
         mutableStateOf(
             cards
-                .filter { (_, c) -> c.deckId == deck.id && c.dueDate <= today }
+                .filter { (_, c) -> c.deckId == deck.id && isDue(c.dueDate) }
                 .sortedBy { (_, c) -> c.dueDate }
         )
     }
@@ -148,9 +152,8 @@ fun ReviewScreen(
 
         // restart button reloads due cards again and resets all counters
         Button(onClick = {
-            val newToday = todayString()
             sessionCards = cards
-                .filter { (_, c) -> c.deckId == deck.id && c.dueDate <= newToday }
+                .filter { (_, c) -> c.deckId == deck.id && isDue(c.dueDate) }
                 .sortedBy { (_, c) -> c.dueDate }
 
             // reset the session UI
@@ -160,6 +163,7 @@ fun ReviewScreen(
             hardCount = 0
             goodCount = 0
             easyCount = 0
+            message = ""
         }) { Text("Restart Session") }
 
         Spacer(Modifier.height(8.dp))

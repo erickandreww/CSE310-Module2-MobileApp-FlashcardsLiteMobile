@@ -4,6 +4,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.ListenerRegistration
 
 class FirebaseService {
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
@@ -21,6 +22,8 @@ class FirebaseService {
     private fun userDoc(uid: String) = db.collection("users").document(uid)
     private fun decksCol(uid: String) = userDoc(uid).collection("decks")
     private fun cardsCol(uid: String) = userDoc(uid).collection("cards")
+
+    private var decksListener: ListenerRegistration? = null
 
     // AUTH
     fun signUp(email: String, password: String, onResult: (String) -> Unit) {
@@ -40,6 +43,14 @@ class FirebaseService {
         onResult("Signed Out!")
     }
 
+    fun listenAuth(onChange: (Boolean) -> Unit): FirebaseAuth.AuthStateListener {
+        val listener = FirebaseAuth.AuthStateListener { a ->
+            onChange(a.currentUser != null)
+        }
+        auth.addAuthStateListener(listener)
+        return listener
+    }
+
     //// DECKS
     fun addDeck(name: String, onResult: (String) -> Unit) {
         val uid = requiredUid(onResult) ?: return
@@ -54,28 +65,6 @@ class FirebaseService {
             .add(data)
             .addOnSuccessListener { onResult("Deck added!")}
             .addOnFailureListener { e -> onResult("Add failed: ${e.message}")}
-    }
-
-    fun loadDecks(
-        onResult: (List<CloudDeck>) -> Unit,
-        onError: (String) -> Unit
-    ) {
-        val uid = requiredUid(onError) ?: return
-
-
-        decksCol(uid)
-            .orderBy("createdAt", Query.Direction.ASCENDING)
-            .get()
-            .addOnSuccessListener { snap ->
-                val items = snap.documents.map { doc ->
-                    CloudDeck(
-                        id = doc.id,
-                        name = doc.getString("name").orEmpty()
-                    )
-                }
-                onResult(items)
-            }
-            .addOnFailureListener { e -> onError("Load failed: ${e.message}")}
     }
 
     fun updateDeck(deckId: String, newName: String, onResult: (String) -> Unit) {
@@ -124,6 +113,26 @@ class FirebaseService {
             .addOnFailureListener { e -> onResult("Load cards failed: ${e.message}") }
     }
 
+    fun listenDecks(
+        onResult: (List<CloudDeck>) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val uid = requiredUid(onError) ?: return
+        decksListener?.remove()
+
+        decksListener = decksCol(uid)
+            .orderBy("createdAt", Query.Direction.ASCENDING)
+            .addSnapshotListener { snap, e ->
+                if (e != null) { onError("Listen failed: ${e.message}"); return@addSnapshotListener }
+                if (snap == null) { onResult(emptyList()); return@addSnapshotListener }
+
+                val items = snap.documents.map { doc ->
+                    CloudDeck(id = doc.id, name = doc.getString("name").orEmpty())
+                }
+                onResult(items)
+            }
+    }
+
     //// CARDS
     fun addCard(
         deckId: String,
@@ -149,39 +158,10 @@ class FirebaseService {
 
         cardsCol(uid)
             .add(data)
-            .addOnSuccessListener { doc ->
-                onResult("Card added! (id: ${doc.id})")
+            .addOnSuccessListener {
+                onResult("Card added!")
             }
             .addOnFailureListener { e -> onResult("Add failed: ${e.message}") }
-    }
-
-    fun loadCards(
-        deckId: String,
-        onResult: (List<Pair<String, CloudCard>>) -> Unit,
-        onError: (String) -> Unit
-    ) {
-        val uid = requiredUid(onError) ?: return
-
-        cardsCol(uid)
-            .whereEqualTo("deckId", deckId)
-            .orderBy("createdAt", Query.Direction.DESCENDING)
-            .get()
-            .addOnSuccessListener { snap ->
-                val items = snap.documents.map { doc ->
-                    val card = CloudCard(
-                        id = doc.id,
-                        deckId = doc.getString("deckId").orEmpty(),
-                        front = doc.getString("front").orEmpty(),
-                        back = doc.getString("back").orEmpty(),
-                        intervalDays = (doc.getLong("intervalDays") ?: 1L).toInt(),
-                        dueDate = doc.getString("dueDate").orEmpty(),
-                        lastReviewed = doc.getString("lastReviewed")
-                    )
-                    doc.id to card
-                }
-                onResult(items)
-            }
-            .addOnFailureListener { e -> onError("Load failed: ${e.message}") }
     }
 
     fun updateCard(docId: String, updated: CloudCard, onResult: (String) -> Unit) {
@@ -211,6 +191,43 @@ class FirebaseService {
             .delete()
             .addOnSuccessListener { onResult("Card Deleted!") }
             .addOnFailureListener { e -> onResult("Delete failed: ${e.message}") }
+    }
+
+    fun listenCards(
+        deckId: String,
+        onResult: (List<Pair<String, CloudCard>>) -> Unit,
+        onError: (String) -> Unit
+    ): ListenerRegistration?  {
+        val uid = requiredUid(onError) ?: return null
+
+        return cardsCol(uid)
+            .whereEqualTo("deckId", deckId)
+            .addSnapshotListener { snap, e ->
+                if (e != null) { onError("Listen failed: ${e.message}"); return@addSnapshotListener }
+                if (snap == null) { onResult(emptyList()); return@addSnapshotListener }
+
+                val items = snap.documents.map { doc ->
+                    val card = CloudCard(
+                        id = doc.id,
+                        deckId = doc.getString("deckId").orEmpty(),
+                        front = doc.getString("front").orEmpty(),
+                        back = doc.getString("back").orEmpty(),
+                        intervalDays = (doc.getLong("intervalDays") ?: 1L).toInt(),
+                        dueDate = doc.getString("dueDate").orEmpty(),
+                        lastReviewed = doc.getString("lastReviewed")
+                    )
+                    doc.id to card
+                }
+                onResult(items)
+            }
+    }
+
+    fun stopDecksListening() {
+        decksListener?.remove(); decksListener = null
+    }
+
+    fun stopAuthListening(listener: FirebaseAuth.AuthStateListener) {
+        auth.removeAuthStateListener(listener)
     }
 
 }

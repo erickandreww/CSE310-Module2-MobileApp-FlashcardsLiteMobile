@@ -28,7 +28,6 @@ fun DeckScreen(
     onAddCard: (deckId: String, front: String, back: String) -> Unit,
     onUpdateCard: (cardId: String, updated: CloudCard) -> Unit,
     onDeleteCard: (cardId: String) -> Unit,
-    onRefreshCards: (deckId: String) -> Unit,
     onReview: (String) -> Unit,
     onBack: () -> Unit,
     statusMessage: String,
@@ -56,7 +55,7 @@ fun DeckScreen(
         // input for the card front
         OutlinedTextField(
             value = front,
-            onValueChange = { front = it; message = "" },
+            onValueChange = { front = limitText(it, maxChars = 50, maxLines = 2) },
             label = { Text("Front") },
             modifier = modifier.fillMaxWidth()
         )
@@ -66,7 +65,7 @@ fun DeckScreen(
         // input for the card back
         OutlinedTextField(
             value = back,
-            onValueChange = { back = it; message = "" },
+            onValueChange = { back = limitText(it, maxChars = 150, maxLines = 5) },
             label = { Text("Back") },
             modifier = modifier.fillMaxWidth()
         )
@@ -98,7 +97,7 @@ fun DeckScreen(
             if (editingCardId == null) {
                 // add new card
                 onAddCard(deck.id, f, b)
-                message = "Card Created!"
+                message = ""
             }
             else {
                 // if a card is selected, update that card
@@ -110,7 +109,7 @@ fun DeckScreen(
                 }
                 val updated = original.copy(front = f, back = b)
                 onUpdateCard(cardId, updated)
-                message = "Card edited successfully"
+                message = ""
             }
 
             // clear inputs and exit edit mode
@@ -145,19 +144,10 @@ fun DeckScreen(
         if (message.isNotBlank()) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(message)
-        }
-
-        if (statusMessage.isNotBlank()) {
+        } else if (statusMessage.isNotBlank()) {
             Spacer(modifier = Modifier.height(6.dp))
             Text(statusMessage)
         }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Button(
-            onClick = { onRefreshCards(deck.id) },
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("Refresh Cards") }
 
         Spacer(modifier = Modifier.height(12.dp))
 
@@ -182,7 +172,7 @@ fun DeckScreen(
                     ) {
                         // show the card text
                         Text(
-                            text = "${c.front} -> ${c.back}",
+                            text = c.front,
                             modifier = Modifier.weight(1f)
                         )
 
@@ -191,7 +181,7 @@ fun DeckScreen(
                             front = c.front
                             back = c.back
                             editingCardId = cardId
-                            message = "Editing card"
+                            message = "Editing card..."
                         }) {
                             Text("Edit")
                         }
@@ -205,7 +195,7 @@ fun DeckScreen(
                                 message = ""
                             }
                             onDeleteCard(cardId)
-                            message = "Card Deleted!"
+                            message = ""
                         }) {
                             Text("Delete")
                         }

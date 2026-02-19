@@ -8,19 +8,17 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.flashcardslitemobile.ui.theme.FlashcardsLiteMobileTheme
-import kotlinx.coroutines.launch
 import com.google.firebase.FirebaseApp
 
 class MainActivity : ComponentActivity() {
@@ -56,6 +54,22 @@ class MainActivity : ComponentActivity() {
 
                     val start = if (firebase.currentUid() != null) "home" else "cloudTest"
 
+                    DisposableEffect(Unit) {
+                        val listener = firebase.listenAuth { logged ->
+                            currentUserEmail = firebase.currentEmail()
+                            if (logged) {
+                                navController.navigate("home") {
+                                    popUpTo("cloudTest") { inclusive = true }
+                                }
+                            } else {
+                                navController.navigate("cloudTest") {
+                                    popUpTo("home") { inclusive = true }
+                                }
+                            }
+                        }
+                        onDispose { firebase.stopAuthListening(listener) }
+                    }
+
                     // Where we define all the screens routes in the app
                     NavHost(
                         navController = navController,
@@ -66,25 +80,13 @@ class MainActivity : ComponentActivity() {
                         composable("cloudTest") {
                             CloudTestScreen(
                                 onSignUp = { email, password ->
-                                    firebase.signUp(email, password) { msg ->
-                                        status = msg
-                                        currentUserEmail = firebase.currentEmail()
-                                        navController.navigate("home") {
-                                            popUpTo("cloudTest") { inclusive = true }
-                                        }
-                                    }
-                                },
+                                firebase.signUp(email, password) { msg ->
+                                    status = msg
+                                    currentUserEmail = firebase.currentEmail()
+                                }
+                            },
                                 onSignIn = { email, password ->
                                     firebase.signIn(email, password) { msg ->
-                                        status = msg
-                                        currentUserEmail = firebase.currentEmail()
-                                        navController.navigate("home") {
-                                            popUpTo("cloudTest") { inclusive = true }
-                                        }
-                                    }
-                                },
-                                onSignOut = {
-                                    firebase.signOut { msg ->
                                         status = msg
                                         currentUserEmail = firebase.currentEmail()
                                     }
@@ -98,17 +100,12 @@ class MainActivity : ComponentActivity() {
                         // HOME SCREEN ROUTE
                         composable("home") {
 
-                            fun refreshDecks() {
-                                firebase.loadDecks(
-                                    onResult = { list ->
-                                        cloudDecks = list
-                                        status = "Loaded ${list.size} decks"
-                                    },
-                                    onError = { err -> status = err }
+                            LaunchedEffect(firebase.currentUid()) {
+                                firebase.listenDecks(
+                                    onResult = { cloudDecks = it },
+                                    onError = { status = it}
                                 )
                             }
-
-                            LaunchedEffect(Unit) { refreshDecks() }
 
                             HomeScreen(
                                 decks = cloudDecks,
@@ -117,7 +114,6 @@ class MainActivity : ComponentActivity() {
                                 onAddDeck = { name ->
                                     firebase.addDeck(name) { msg ->
                                         status = msg
-                                        refreshDecks()
                                     }
                                 },
 
@@ -126,17 +122,19 @@ class MainActivity : ComponentActivity() {
                                     navController.navigate("deck/${deck.id}")
                                 },
 
+                                onUpdateDeck = { id, newName ->
+                                    firebase.updateDeck(id, newName) { status = it }
+                                },
+
                                 // Delete one deck and all cards of the deck
                                 onDeleteDeck = { deckId ->
                                     firebase.deleteDeck(deckId) { msg ->
                                         status = msg
-                                        refreshDecks()
                                     }
                                 },
 
-                                onRefresh = { refreshDecks() },
-
                                 onSignOut = {
+                                    firebase.stopDecksListening()
                                     firebase.signOut { msg ->
                                         status = msg
                                         currentUserEmail = null
@@ -167,18 +165,15 @@ class MainActivity : ComponentActivity() {
                                 ErrorScreen(onBack = { navController.popBackStack() })
                             } else {
 
-                                fun refreshCards() {
-                                    firebase.loadCards(
+                                DisposableEffect(deckId) {
+                                    cloudCards = emptyList()
+                                    val reg = firebase.listenCards(
                                         deckId = deckId,
-                                        onResult = { list ->
-                                            cloudCards = list
-                                            status = "Loaded ${list.size} cards"
-                                        },
-                                        onError = { err -> status = err }
+                                        onResult = { cloudCards = it },
+                                        onError = { status = it }
                                     )
+                                    onDispose { reg?.remove() }
                                 }
-
-                                LaunchedEffect(deck.id) { refreshCards() }
 
                                 DeckScreen(
                                     deck = deck,
@@ -195,23 +190,24 @@ class MainActivity : ComponentActivity() {
                                             lastReviewed = null
                                         ) { msg ->
                                             status = msg
-                                            refreshCards()
                                         }
                                     },
 
                                     // Update a card
                                     onUpdateCard = { cardId, updated ->
+                                        cloudCards = cloudCards.map { (id, c) ->
+                                            if (id == cardId) id to updated else id to c
+                                        }
                                         firebase.updateCard(cardId, updated) { msg ->
                                             status = msg
-                                            refreshCards()
                                         }
                                     },
 
                                     // Delete a card
                                     onDeleteCard = { cardId ->
+                                        cloudCards = cloudCards.filterNot { it.first == cardId }
                                         firebase.deleteCard(cardId) { msg ->
                                             status = msg
-                                            refreshCards()
                                         }
                                     },
 
@@ -219,9 +215,6 @@ class MainActivity : ComponentActivity() {
                                     onReview = {
                                         navController.navigate("review/${deckId}")
                                     },
-
-                                    // refresh all cards
-                                    onRefreshCards = { refreshCards() },
 
                                     // Go back
                                     onBack = { navController.popBackStack() },
@@ -241,19 +234,15 @@ class MainActivity : ComponentActivity() {
                                 return@composable
                             }
 
-                            fun refreshCards() {
-                                firebase.loadCards(
+                            DisposableEffect(deckId) {
+                                cloudCards = emptyList()
+                                val reg = firebase.listenCards(
                                     deckId = deckId,
-                                    onResult = { list ->
-                                        // list should be List<Pair<String, CloudCard>>
-                                        cloudCards = list
-                                        status = "Loaded ${list.size} cards"
-                                    },
-                                    onError = { err -> status = err }
+                                    onResult = { cloudCards = it },
+                                    onError = { status = it }
                                 )
+                                onDispose { reg?.remove() }
                             }
-
-                            LaunchedEffect(deckId) { refreshCards() }
 
                             ReviewScreen(
                                 deck = deck,
@@ -261,7 +250,6 @@ class MainActivity : ComponentActivity() {
                                 onUpdateCard = { docId, updated ->
                                     firebase.updateCard(docId, updated) { msg ->
                                         status = msg
-                                        refreshCards()
                                     }
                                 },
                                 onBack = { navController.popBackStack() }

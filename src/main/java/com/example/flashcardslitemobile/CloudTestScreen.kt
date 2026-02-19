@@ -25,7 +25,6 @@ import androidx.compose.ui.unit.dp
 fun CloudTestScreen(
     onSignUp: (String, String) -> Unit,
     onSignIn: (String, String) -> Unit,
-    onSignOut: () -> Unit,
     onBack: () -> Unit,
     currentUserEmail: String?,
     statusMessage: String,
@@ -35,9 +34,22 @@ fun CloudTestScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
 
-    Column(modifier = modifier
-        .padding(16.dp)
-        .fillMaxSize(),
+    var localStatus by remember { mutableStateOf("") }
+
+    fun validate(): Pair<String, String>? {
+        val e = email.trim()
+        val p = password.trim()
+
+        if (e.isBlank() || p.isBlank()) {
+            localStatus = "Email and password can't be empty"
+            return null
+        }
+        localStatus = ""
+        return e to p
+    }
+
+    Column(
+        modifier = modifier.padding(16.dp).fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text("Cloud Test")
@@ -65,24 +77,26 @@ fun CloudTestScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             Button(
-                onClick = { onSignUp(email.trim(), password.trim())},
+                onClick = {
+                    val creds = validate() ?: return@Button
+                    onSignUp(creds.first, creds.second)
+                },
                 modifier = Modifier.weight((1f))
             ) { Text("Sign Up") }
 
             Button(
-                onClick = { onSignIn(email.trim(), password.trim())},
+                onClick = {
+                    val creds = validate() ?: return@Button
+                    onSignIn(creds.first, creds.second)
+                },
                 modifier = Modifier.weight((1f))
             ) { Text("Sign In") }
         }
 
-        Button(
-            onClick = onSignOut,
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("Sign Out") }
-
-        if (statusMessage.isNotBlank()) {
+        val msg = localStatus.ifBlank { statusMessage }
+        if (msg.isNotBlank()) {
             Spacer(modifier = Modifier.height(8.dp))
-            Text(statusMessage)
+            Text(msg)
         }
 
         Spacer(modifier = Modifier.height(16.dp))

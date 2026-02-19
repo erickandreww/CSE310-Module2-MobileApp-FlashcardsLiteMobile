@@ -29,8 +29,8 @@ fun HomeScreen(
     decks: List<CloudDeck>,
     onAddDeck: (String) -> Unit,
     onOpenDeck: (CloudDeck) -> Unit,
+    onUpdateDeck: (deckId: String, newName: String) -> Unit,
     onDeleteDeck: (String) -> Unit,
-    onRefresh: () -> Unit,
     onSignOut: () -> Unit,
     currentUserEmail: String?,
     statusMessage: String,
@@ -41,6 +41,10 @@ fun HomeScreen(
 
     // confirm deck deletion when not null
     var deckToDelete by remember { mutableStateOf<CloudDeck?>(null) }
+
+    //
+    var deckToRename by remember { mutableStateOf<CloudDeck?>(null) }
+    var renameText by remember { mutableStateOf("") }
 
     // feedback massage
     var message by remember { mutableStateOf("") }
@@ -59,7 +63,9 @@ fun HomeScreen(
         // input where the user types the deck name
         OutlinedTextField(
             value = deckName,
-            onValueChange = { deckName = it; message = "" },
+            onValueChange = {
+                deckName = limitText(it, maxChars = 30, maxLines = 1)
+                message = "" },
             label = { Text("New deck name") },
             modifier = modifier.fillMaxWidth()
         )
@@ -115,10 +121,14 @@ fun HomeScreen(
                         modifier = Modifier.weight(1f)
                     ) { Text(d.name) }
 
+                    Button(
+                        onClick = { deckToRename = d; renameText = d.name },
+                        modifier = Modifier.width(80.dp)) { Text("Edit") }
+
                     // delete card button (send to confirmation)
                     Button(
                         onClick = { deckToDelete = d },
-                        modifier = Modifier.width(96.dp)
+                        modifier = Modifier.width(90.dp)
                     ) { Text("Delete") }
                 }
             }
@@ -126,13 +136,39 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Button(onClick = onRefresh, modifier = Modifier.weight(1f)) { Text("Refresh") }
-            Button(onClick = onSignOut, modifier = Modifier.weight(1f)) { Text("Sign Out") }
-        }
+        Button(onClick = onSignOut, modifier = modifier.fillMaxWidth()) { Text("Sign Out") }
+    }
+
+    deckToRename?.let { deck ->
+        AlertDialog(
+            onDismissRequest = { deckToRename = null },
+            title = { Text("Rename deck") },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = limitText(it, maxChars = 40, maxLines = 1) },
+                    label = { Text("New name") }
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val newName = renameText.trim()
+                    when {
+                        newName.isBlank() -> message = "Name can't be empty"
+                        decks.any { it.name.equals(newName, true) && it.id != deck.id } ->
+                            message = "Deck name already exists"
+                        else -> {
+                            onUpdateDeck(deck.id, newName)
+                            deckToRename = null
+                            message = "Renaming..."
+                        }
+                    }
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                Button(onClick = { deckToRename = null }) { Text("Cancel") }
+            }
+        )
     }
 
     // confirm deck deletion

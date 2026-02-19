@@ -5,6 +5,17 @@ import java.time.LocalDate
 // Gets today's date as a String, this format it's easy to compare and to save in DataStore
 fun todayString(): String = LocalDate.now().toString()
 
+fun limitText(input: String, maxChars: Int, maxLines: Int): String {
+    // hard cap characters first
+    val capped = input.take(maxChars)
+
+    // then cap lines
+    val lines = capped.split('\n')
+    if (lines.size <= maxLines) return capped
+
+    return lines.take(maxLines).joinToString("\n")
+}
+
 // This function updates a card based on the rating the user picked during review
 fun applyRatingCloud(card: CloudCard, rating: Int): CloudCard {
     // Today's date, used to calculate the new due date
