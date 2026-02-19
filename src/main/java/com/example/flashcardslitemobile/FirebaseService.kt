@@ -23,19 +23,17 @@ class FirebaseService {
     private fun decksCol(uid: String) = userDoc(uid).collection("decks")
     private fun cardsCol(uid: String) = userDoc(uid).collection("cards")
 
-    private var decksListener: ListenerRegistration? = null
-
     // AUTH
     fun signUp(email: String, password: String, onResult: (String) -> Unit) {
         auth.createUserWithEmailAndPassword(email, password)
             .addOnSuccessListener { onResult("Signed up!") }
-            .addOnFailureListener { e -> onResult("Sign Up Failed: ${e.message}")}
+            .addOnFailureListener { e -> onResult("Sign Up Failed: ${e.message}") }
     }
 
     fun signIn(email: String, password: String, onResult: (String) -> Unit) {
         auth.signInWithEmailAndPassword(email, password)
-            .addOnSuccessListener { onResult("Signed in!")}
-            .addOnFailureListener { e -> onResult("Sign In failed: ${e.message}")}
+            .addOnSuccessListener { onResult("Signed in!") }
+            .addOnFailureListener { e -> onResult("Sign In failed: ${e.message}") }
     }
 
     fun signOut(onResult: (String) -> Unit) {
@@ -51,6 +49,10 @@ class FirebaseService {
         return listener
     }
 
+    fun stopAuthListening(listener: FirebaseAuth.AuthStateListener) {
+        auth.removeAuthStateListener(listener)
+    }
+
     //// DECKS
     fun addDeck(name: String, onResult: (String) -> Unit) {
         val uid = requiredUid(onResult) ?: return
@@ -63,8 +65,8 @@ class FirebaseService {
 
         decksCol(uid)
             .add(data)
-            .addOnSuccessListener { onResult("Deck added!")}
-            .addOnFailureListener { e -> onResult("Add failed: ${e.message}")}
+            .addOnSuccessListener { onResult("Deck added!") }
+            .addOnFailureListener { e -> onResult("Add failed: ${e.message}") }
     }
 
     fun updateDeck(deckId: String, newName: String, onResult: (String) -> Unit) {
@@ -93,18 +95,14 @@ class FirebaseService {
             .addOnSuccessListener { snap ->
                 // batch delete those cards
                 val batch = db.batch()
-                snap.documents.forEach { doc ->
-                    batch.delete(doc.reference)
-                }
+                snap.documents.forEach { doc -> batch.delete(doc.reference) }
 
                 // commit the card deletions first
                 batch.commit()
                     .addOnSuccessListener {
 
                         // delete the deck document
-                        decksCol(uid)
-                            .document(deckId)
-                            .delete()
+                        decksCol(uid).document(deckId).delete()
                             .addOnSuccessListener { onResult("Deck and cards Deleted!") }
                             .addOnFailureListener { e -> onResult("Deck Delete failed: ${e.message}") }
                     }
@@ -116,11 +114,11 @@ class FirebaseService {
     fun listenDecks(
         onResult: (List<CloudDeck>) -> Unit,
         onError: (String) -> Unit
-    ) {
-        val uid = requiredUid(onError) ?: return
-        decksListener?.remove()
+    ): ListenerRegistration {
+        val uid = requiredUid(onError)
+            ?: return db.collection("_noop").addSnapshotListener { _, _ -> } // never used if not logged
 
-        decksListener = decksCol(uid)
+        return decksCol(uid)
             .orderBy("createdAt", Query.Direction.ASCENDING)
             .addSnapshotListener { snap, e ->
                 if (e != null) { onError("Listen failed: ${e.message}"); return@addSnapshotListener }
@@ -158,9 +156,7 @@ class FirebaseService {
 
         cardsCol(uid)
             .add(data)
-            .addOnSuccessListener {
-                onResult("Card added!")
-            }
+            .addOnSuccessListener { onResult("Card added!") }
             .addOnFailureListener { e -> onResult("Add failed: ${e.message}") }
     }
 
@@ -197,8 +193,9 @@ class FirebaseService {
         deckId: String,
         onResult: (List<Pair<String, CloudCard>>) -> Unit,
         onError: (String) -> Unit
-    ): ListenerRegistration?  {
-        val uid = requiredUid(onError) ?: return null
+    ): ListenerRegistration {
+        val uid = requiredUid(onError)
+            ?: return db.collection("_noop").addSnapshotListener { _, _ -> }
 
         return cardsCol(uid)
             .whereEqualTo("deckId", deckId)
@@ -221,13 +218,4 @@ class FirebaseService {
                 onResult(items)
             }
     }
-
-    fun stopDecksListening() {
-        decksListener?.remove(); decksListener = null
-    }
-
-    fun stopAuthListening(listener: FirebaseAuth.AuthStateListener) {
-        auth.removeAuthStateListener(listener)
-    }
-
 }

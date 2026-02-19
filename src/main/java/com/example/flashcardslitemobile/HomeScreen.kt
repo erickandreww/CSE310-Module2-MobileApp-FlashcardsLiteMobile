@@ -85,7 +85,6 @@ fun HomeScreen(
                 // add deck to the list
                 else -> {
                     onAddDeck(name)
-                    message = "Creating deck..."
                     deckName = ""
                 }
             }
@@ -160,7 +159,6 @@ fun HomeScreen(
                         else -> {
                             onUpdateDeck(deck.id, newName)
                             deckToRename = null
-                            message = "Renaming..."
                         }
                     }
                 }) { Text("Save") }

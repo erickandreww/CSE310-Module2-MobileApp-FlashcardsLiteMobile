@@ -10,14 +10,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.flashcardslitemobile.ui.theme.FlashcardsLiteMobileTheme
 import com.google.firebase.FirebaseApp
 
@@ -35,14 +32,9 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         setContent {
-            // These are my main "app state" variables:
-            // Using remember + mutableState so Compose updates the UI when values change
-            var cloudDecks by remember { mutableStateOf(emptyList<CloudDeck>()) }
-            var cloudCards by remember { mutableStateOf(emptyList<Pair<String, CloudCard>>()) }
 
-            val firebase = remember { FirebaseService() }
-            var status by remember { mutableStateOf("") }
-            var currentUserEmail by remember { mutableStateOf(firebase.currentEmail())}
+            // ViewModel owns all app state now (decks, cards, auth, etc.)
+            val vm: AppViewModel = viewModel()
 
             // App theme (colors, typography, etc.)
             FlashcardsLiteMobileTheme {
@@ -52,22 +44,32 @@ class MainActivity : ComponentActivity() {
                 // Scaffold gives a basic layout structure and padding from system bars
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
 
-                    val start = if (firebase.currentUid() != null) "home" else "cloudTest"
+                    // Decide which screen starts first
+                    val start = if (vm.isLoggedIn) "home" else "cloudTest"
 
+                    // Start listening to auth changes when the app is on screen.
+                    // When the composable is destroyed, we stop the listener.
                     DisposableEffect(Unit) {
-                        val listener = firebase.listenAuth { logged ->
-                            currentUserEmail = firebase.currentEmail()
-                            if (logged) {
-                                navController.navigate("home") {
-                                    popUpTo("cloudTest") { inclusive = true }
-                                }
-                            } else {
-                                navController.navigate("cloudTest") {
-                                    popUpTo("home") { inclusive = true }
-                                }
+                        vm.startAuthListening()
+                        onDispose { vm.stopAuthListening() }
+                    }
+
+                    // This runs whenever login state changes.
+                    // Used to navigate and also start loading decks.
+                    LaunchedEffect(vm.isLoggedIn) {
+                        if (vm.isLoggedIn) {
+                            // If logged in, go to home and clear login screen from back stack
+                            navController.navigate("home") {
+                                popUpTo("cloudTest") { inclusive = true }
+                            }
+                            // Start listening to decks once the user is logged in
+                            vm.startDecksListening()
+                        } else {
+                            // If logged out, go to login screen and clear home from back stack
+                            navController.navigate("cloudTest") {
+                                popUpTo("home") { inclusive = true }
                             }
                         }
-                        onDispose { firebase.stopAuthListening(listener) }
                     }
 
                     // Where we define all the screens routes in the app
@@ -80,41 +82,25 @@ class MainActivity : ComponentActivity() {
                         composable("cloudTest") {
                             CloudTestScreen(
                                 onSignUp = { email, password ->
-                                firebase.signUp(email, password) { msg ->
-                                    status = msg
-                                    currentUserEmail = firebase.currentEmail()
-                                }
-                            },
+                                    vm.signUp(email, password)
+                                },
                                 onSignIn = { email, password ->
-                                    firebase.signIn(email, password) { msg ->
-                                        status = msg
-                                        currentUserEmail = firebase.currentEmail()
-                                    }
+                                    vm.signIn(email, password)
                                 },
                                 onBack = { navController.popBackStack() },
-                                currentUserEmail = currentUserEmail,
-                                statusMessage = status
+                                currentUserEmail = vm.currentUserEmail,
+                                statusMessage = vm.status
                             )
                         }
 
                         // HOME SCREEN ROUTE
                         composable("home") {
-
-                            LaunchedEffect(firebase.currentUid()) {
-                                firebase.listenDecks(
-                                    onResult = { cloudDecks = it },
-                                    onError = { status = it}
-                                )
-                            }
-
                             HomeScreen(
-                                decks = cloudDecks,
+                                decks = vm.cloudDecks,
 
                                 // Add a deck
                                 onAddDeck = { name ->
-                                    firebase.addDeck(name) { msg ->
-                                        status = msg
-                                    }
+                                    vm.addDeck(name)
                                 },
 
                                 // Open deck screen using the deck ID
@@ -123,31 +109,23 @@ class MainActivity : ComponentActivity() {
                                 },
 
                                 onUpdateDeck = { id, newName ->
-                                    firebase.updateDeck(id, newName) { status = it }
+                                    vm.updateDeck(id, newName)
                                 },
 
                                 // Delete one deck and all cards of the deck
                                 onDeleteDeck = { deckId ->
-                                    firebase.deleteDeck(deckId) { msg ->
-                                        status = msg
-                                    }
+                                    vm.deleteDeck(deckId)
                                 },
 
                                 onSignOut = {
-                                    firebase.stopDecksListening()
-                                    firebase.signOut { msg ->
-                                        status = msg
-                                        currentUserEmail = null
-                                        cloudDecks = emptyList()
-                                        cloudCards = emptyList()
-                                        navController.navigate("cloudTest") {
-                                            popUpTo("home") { inclusive = true }
-                                        }
+                                    vm.signOut()
+                                    navController.navigate("cloudTest") {
+                                        popUpTo("home") { inclusive = true }
                                     }
                                 },
 
-                                currentUserEmail = currentUserEmail,
-                                statusMessage = status
+                                currentUserEmail = vm.currentUserEmail,
+                                statusMessage = vm.status
                             )
                         }
 
@@ -158,68 +136,45 @@ class MainActivity : ComponentActivity() {
                             val deckId = backStackEntry.arguments?.getString("deckId").orEmpty()
 
                             // Find the deck
-                            val deck = cloudDecks.firstOrNull { it.id == deckId }
+                            val deck = vm.cloudDecks.firstOrNull { it.id == deckId }
 
                             // If the deck doesn't exist, show an error screen
                             if (deck == null) {
                                 ErrorScreen(onBack = { navController.popBackStack() })
                             } else {
-
                                 DisposableEffect(deckId) {
-                                    cloudCards = emptyList()
-                                    val reg = firebase.listenCards(
-                                        deckId = deckId,
-                                        onResult = { cloudCards = it },
-                                        onError = { status = it }
-                                    )
-                                    onDispose { reg?.remove() }
+                                    vm.startCardsListening(deckId)
+                                    onDispose { vm.stopCardsListening() }
                                 }
 
                                 DeckScreen(
                                     deck = deck,
-                                    cards = cloudCards,
+                                    cards = vm.cloudCards,
 
                                     // Add card to this deck
                                     onAddCard = { dId, front, back ->
-                                        firebase.addCard(
-                                            deckId = dId,
-                                            front = front,
-                                            back = back,
-                                            intervalDays = 1,
-                                            dueDate = todayString(),
-                                            lastReviewed = null
-                                        ) { msg ->
-                                            status = msg
-                                        }
+                                        vm.addCard(dId, front, back)
                                     },
 
                                     // Update a card
                                     onUpdateCard = { cardId, updated ->
-                                        cloudCards = cloudCards.map { (id, c) ->
-                                            if (id == cardId) id to updated else id to c
-                                        }
-                                        firebase.updateCard(cardId, updated) { msg ->
-                                            status = msg
-                                        }
+                                        vm.updateCard(cardId, updated)
                                     },
 
                                     // Delete a card
                                     onDeleteCard = { cardId ->
-                                        cloudCards = cloudCards.filterNot { it.first == cardId }
-                                        firebase.deleteCard(cardId) { msg ->
-                                            status = msg
-                                        }
+                                        vm.deleteCard(cardId)
                                     },
 
                                     // Navigate to review screen
                                     onReview = {
-                                        navController.navigate("review/${deckId}")
+                                        navController.navigate("review/$deckId")
                                     },
 
                                     // Go back
                                     onBack = { navController.popBackStack() },
 
-                                    statusMessage = status
+                                    statusMessage = vm.status
                                 )
                             }
                         }
@@ -227,30 +182,18 @@ class MainActivity : ComponentActivity() {
                         // REVIEW SCREEN ROUTE
                         composable("review/{deckId}") { backStackEntry ->
                             val deckId = backStackEntry.arguments?.getString("deckId").orEmpty()
-                            val deck = cloudDecks.firstOrNull { it.id == deckId }
+                            val deck = vm.cloudDecks.firstOrNull { it.id == deckId }
 
                             if (deck == null) {
                                 ErrorScreen(onBack = { navController.popBackStack() })
                                 return@composable
                             }
 
-                            DisposableEffect(deckId) {
-                                cloudCards = emptyList()
-                                val reg = firebase.listenCards(
-                                    deckId = deckId,
-                                    onResult = { cloudCards = it },
-                                    onError = { status = it }
-                                )
-                                onDispose { reg?.remove() }
-                            }
-
                             ReviewScreen(
                                 deck = deck,
-                                cards = cloudCards,
+                                cards = vm.cloudCards,
                                 onUpdateCard = { docId, updated ->
-                                    firebase.updateCard(docId, updated) { msg ->
-                                        status = msg
-                                    }
+                                    vm.updateCard(docId, updated)
                                 },
                                 onBack = { navController.popBackStack() }
                             )
