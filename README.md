@@ -23,7 +23,7 @@ Example structure:
     - `{deckId}` (document)
         - `id`: number (Int)
         - `name`: string
-        - `createdAt`: timestamp (optional)
+        - `createdAt`: timestamp 
 
 - `cards` (collection)
     - `{cardId}` (document)
@@ -31,11 +31,11 @@ Example structure:
         - `deckId`: number (Int)
         - `front`: string
         - `back`: string
-        - `dueAt`: timestamp/number
-        - `intervalDays`: number
-        - `easeFactor`: number
-        - `repetitions`: number
-        - `lastReviewedAt`: timestamp/number (optional)
+        - `dueDate`: string
+        - `intervalDays`: number (Int)
+        - `lastReviewed`: String?
+        - `createdAt`: timestamp 
+        - `updatedAt`: timestamp/number 
 
 This structure allows the app to:
 - Insert new decks/cards into Firestore
