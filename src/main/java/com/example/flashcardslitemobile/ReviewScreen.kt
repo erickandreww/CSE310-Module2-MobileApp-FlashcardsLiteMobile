@@ -20,6 +20,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 
+// helper: checks if a card is due (today or earlier)
+// if parsing fails, I treat it as due so it still shows up
 fun isDue(dueDate: String): Boolean {
     val due = runCatching { LocalDate.parse(dueDate) }.getOrNull()
     return due == null || !due.isAfter(LocalDate.now())
@@ -35,10 +37,16 @@ fun ReviewScreen(
 ) {
 
     // The list of cards to review in the session.
-    // It only includes cards that are due today (or earlier).
-    var sessionCards by remember(deck.id) { mutableStateOf<List<Pair<String, CloudCard>>>(emptyList()) }
+    // Important: this is a "snapshot" for the session, so it doesn't keep resetting mid-review.
+    var sessionCards by remember(deck.id) {
+        mutableStateOf<List<Pair<String, CloudCard>>>(emptyList())
+    }
+
+    // I use this flag so I only build the session once per deck
     var sessionStarted by remember(deck.id) { mutableStateOf(false) }
 
+    // When we enter review (or cards update), build the session list one time.
+    // If session already started, we don't overwrite it.
     LaunchedEffect(deck.id, cards) {
         if (!sessionStarted && cards.isNotEmpty()) {
             sessionCards = cards
@@ -49,9 +57,12 @@ fun ReviewScreen(
     }
 
     // index = which card we're currently on
+    // NOTE: because we remove cards from the list, we can always use index 0
     val index = 0
+
     // if true, show the "back" of the card
     var showBack by remember { mutableStateOf(false) }
+
     // message shown after rating
     var message by remember { mutableStateOf("") }
 
@@ -70,7 +81,7 @@ fun ReviewScreen(
         Text("Review: ${deck.name}")
         Spacer(modifier.height(8.dp))
 
-        // progress and counts
+        // progress and counts (simple version since we always show card 1)
         Text("Progress: ${if (sessionCards.isEmpty()) 0 else 1} / ${sessionCards.size}")
         Text("Again: $againCount Hard: $hardCount  Good: $goodCount  Easy: $easyCount")
 
@@ -81,13 +92,14 @@ fun ReviewScreen(
             return
         }
 
+        // If session not ready yet, show a basic loading message
         if (!sessionStarted) {
             Text("Loading...")
             Button(onClick = onBack) { Text("Back") }
             return
         }
 
-        // current card that's being reviewed
+        // current card that's being reviewed (always the first one)
         val (docId, card) = sessionCards[index]
 
         Spacer(modifier.height(8.dp))
@@ -111,10 +123,15 @@ fun ReviewScreen(
         // rating buttons
         Text("Rate:")
 
+        // local function to handle rating click
         fun rate(rating: Int) {
+            // calculate next due date + interval
             val updated = applyRatingCloud(card, rating)
+
+            // send update to firestore (through vm callback)
             onUpdateCard(docId, updated)
 
+            // count the rating for this session summary
             when (rating) {
                 0 -> againCount++
                 1 -> hardCount++
@@ -122,10 +139,11 @@ fun ReviewScreen(
                 3 -> easyCount++
             }
 
+            // show feedback so user knows it saved
             message = "Next due: ${updated.dueDate}"
             showBack = false
 
-            // ✅ remove the reviewed card from the session list
+            // remove the reviewed card from the session list so we move forward
             sessionCards = sessionCards.filterNot { it.first == docId }
         }
 
@@ -148,17 +166,20 @@ fun ReviewScreen(
 
         // restart button reloads due cards again and resets all counters
         Button(onClick = {
-            // restart uses latest cards snapshot (good)
+            // restart uses latest cards snapshot (so it can include changes)
             sessionCards = cards
                 .filter { (_, c) -> c.deckId == deck.id && isDue(c.dueDate) }
                 .sortedBy { (_, c) -> c.dueDate }
 
+            // reset session UI stuff
             showBack = false
             againCount = 0
             hardCount = 0
             goodCount = 0
             easyCount = 0
             message = ""
+
+            // keep sessionStarted true so it doesn't rebuild automatically
             sessionStarted = true
         }) { Text("Restart Session") }
 

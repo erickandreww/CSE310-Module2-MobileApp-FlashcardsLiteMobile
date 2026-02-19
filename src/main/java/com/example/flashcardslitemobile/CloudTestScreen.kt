@@ -20,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 
-
 @Composable
 fun CloudTestScreen(
     onSignUp: (String, String) -> Unit,
@@ -29,21 +28,26 @@ fun CloudTestScreen(
     currentUserEmail: String?,
     statusMessage: String,
     modifier: Modifier = Modifier
-
 ) {
+    // input fields
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
 
+    // local status is for quick validation errors (before calling firebase)
     var localStatus by remember { mutableStateOf("") }
 
+    // small helper to validate and return cleaned credentials
     fun validate(): Pair<String, String>? {
         val e = email.trim()
         val p = password.trim()
 
+        // basic validation so we don't call firebase with empty inputs
         if (e.isBlank() || p.isBlank()) {
             localStatus = "Email and password can't be empty"
             return null
         }
+
+        // clear local error if valid
         localStatus = ""
         return e to p
     }
@@ -55,8 +59,10 @@ fun CloudTestScreen(
         Text("Cloud Test")
         Spacer(modifier = Modifier.height(12.dp))
 
-        Text("Current user: ${ currentUserEmail ?: "Not logged in"}")
+        // show current user email (if logged in)
+        Text("Current user: ${currentUserEmail ?: "Not logged in"}")
 
+        // email input
         OutlinedTextField(
             value = email,
             onValueChange = { email = it },
@@ -64,6 +70,7 @@ fun CloudTestScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
+        // password input (hidden)
         OutlinedTextField(
             value = password,
             onValueChange = { password = it },
@@ -72,27 +79,31 @@ fun CloudTestScreen(
             modifier = modifier.fillMaxWidth()
         )
 
+        // two buttons side by side
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             Button(
                 onClick = {
+                    // validate first, then call sign up callback
                     val creds = validate() ?: return@Button
                     onSignUp(creds.first, creds.second)
                 },
-                modifier = Modifier.weight((1f))
+                modifier = Modifier.weight(1f)
             ) { Text("Sign Up") }
 
             Button(
                 onClick = {
+                    // validate first, then call sign in callback
                     val creds = validate() ?: return@Button
                     onSignIn(creds.first, creds.second)
                 },
-                modifier = Modifier.weight((1f))
+                modifier = Modifier.weight(1f)
             ) { Text("Sign In") }
         }
 
+        // show validation error first, otherwise show VM status message
         val msg = localStatus.ifBlank { statusMessage }
         if (msg.isNotBlank()) {
             Spacer(modifier = Modifier.height(8.dp))
@@ -101,7 +112,7 @@ fun CloudTestScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // go back to Home Screen
+        // go back to previous screen
         Button(onClick = onBack) { Text("Back") }
     }
 }

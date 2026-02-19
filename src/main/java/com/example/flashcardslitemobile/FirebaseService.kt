@@ -7,41 +7,57 @@ import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.ListenerRegistration
 
 class FirebaseService {
+
+    // Firebase Auth = login system
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
+
+    // Firestore = database
     private val db: FirebaseFirestore = FirebaseFirestore.getInstance()
 
+    // Helpers to get current logged user info
     fun currentEmail(): String? = auth.currentUser?.email
     fun currentUid(): String? = auth.currentUser?.uid
 
+    // This just checks if user is logged in before doing DB stuff
     private fun requiredUid(onError: (String) -> Unit): String? {
         val uid = currentUid()
         if (uid == null) onError("You need to be logged in")
         return uid
     }
 
+    // User structure in Firestore:
+    // users/{uid}/decks
+    // users/{uid}/cards
     private fun userDoc(uid: String) = db.collection("users").document(uid)
     private fun decksCol(uid: String) = userDoc(uid).collection("decks")
     private fun cardsCol(uid: String) = userDoc(uid).collection("cards")
 
+    // -----------------------
     // AUTH
+    // -----------------------
+
     fun signUp(email: String, password: String, onResult: (String) -> Unit) {
+        // Create a new account in Firebase Auth
         auth.createUserWithEmailAndPassword(email, password)
             .addOnSuccessListener { onResult("Signed up!") }
             .addOnFailureListener { e -> onResult("Sign Up Failed: ${e.message}") }
     }
 
     fun signIn(email: String, password: String, onResult: (String) -> Unit) {
+        // Login with email + password
         auth.signInWithEmailAndPassword(email, password)
             .addOnSuccessListener { onResult("Signed in!") }
             .addOnFailureListener { e -> onResult("Sign In failed: ${e.message}") }
     }
 
     fun signOut(onResult: (String) -> Unit) {
+        // Logout
         auth.signOut()
         onResult("Signed Out!")
     }
 
     fun listenAuth(onChange: (Boolean) -> Unit): FirebaseAuth.AuthStateListener {
+        // This listener runs every time auth changes (login/logout)
         val listener = FirebaseAuth.AuthStateListener { a ->
             onChange(a.currentUser != null)
         }
@@ -50,19 +66,25 @@ class FirebaseService {
     }
 
     fun stopAuthListening(listener: FirebaseAuth.AuthStateListener) {
+        // Remove the auth listener
         auth.removeAuthStateListener(listener)
     }
 
-    //// DECKS
+    // -----------------------
+    // DECKS
+    // -----------------------
+
     fun addDeck(name: String, onResult: (String) -> Unit) {
         val uid = requiredUid(onResult) ?: return
 
+        // Basic deck fields
         val data = hashMapOf(
             "name" to name,
             "createdAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp()
         )
 
+        // Add deck to Firestore
         decksCol(uid)
             .add(data)
             .addOnSuccessListener { onResult("Deck added!") }
@@ -72,6 +94,7 @@ class FirebaseService {
     fun updateDeck(deckId: String, newName: String, onResult: (String) -> Unit) {
         val uid = requiredUid(onResult) ?: return
 
+        // Update deck name + timestamp
         val data = mapOf(
             "name" to newName,
             "updatedAt" to FieldValue.serverTimestamp()
@@ -84,24 +107,23 @@ class FirebaseService {
             .addOnFailureListener { e -> onResult("Update failed: ${e.message}") }
     }
 
-    // Deletes the deck doc AND all cards with deckId == deckDocId
     fun deleteDeck(deckId: String, onResult: (String) -> Unit) {
         val uid = requiredUid(onResult) ?: return
 
-        // find all cards that belong to this deck
+        // First we load cards from this deck...
         cardsCol(uid)
             .whereEqualTo("deckId", deckId)
             .get()
             .addOnSuccessListener { snap ->
-                // batch delete those cards
+
+                // ...then we delete them in a batch
                 val batch = db.batch()
                 snap.documents.forEach { doc -> batch.delete(doc.reference) }
 
-                // commit the card deletions first
                 batch.commit()
                     .addOnSuccessListener {
 
-                        // delete the deck document
+                        // ...then finally delete the deck document
                         decksCol(uid).document(deckId).delete()
                             .addOnSuccessListener { onResult("Deck and cards Deleted!") }
                             .addOnFailureListener { e -> onResult("Deck Delete failed: ${e.message}") }
@@ -115,9 +137,13 @@ class FirebaseService {
         onResult: (List<CloudDeck>) -> Unit,
         onError: (String) -> Unit
     ): ListenerRegistration {
-        val uid = requiredUid(onError)
-            ?: return db.collection("_noop").addSnapshotListener { _, _ -> } // never used if not logged
 
+        // Need UID to listen to this user's decks
+        val uid = requiredUid(onError)
+            ?: return db.collection("_noop").addSnapshotListener { _, _ -> }
+        // ^ small trick so we can still return a ListenerRegistration
+
+        // Real-time listener: anytime Firestore changes, this runs again
         return decksCol(uid)
             .orderBy("createdAt", Query.Direction.ASCENDING)
             .addSnapshotListener { snap, e ->
@@ -131,7 +157,10 @@ class FirebaseService {
             }
     }
 
-    //// CARDS
+    // -----------------------
+    // CARDS
+    // -----------------------
+
     fun addCard(
         deckId: String,
         front: String,
@@ -143,6 +172,7 @@ class FirebaseService {
     ) {
         val uid = requiredUid(onResult) ?: return
 
+        // Card fields (deckId is how we know which deck it belongs to)
         val data = hashMapOf(
             "deckId" to deckId,
             "front" to front,
@@ -163,6 +193,7 @@ class FirebaseService {
     fun updateCard(docId: String, updated: CloudCard, onResult: (String) -> Unit) {
         val uid = requiredUid(onResult) ?: return
 
+        // Update the main fields + updatedAt
         val data = mapOf(
             "front" to updated.front,
             "back" to updated.back,
@@ -194,15 +225,19 @@ class FirebaseService {
         onResult: (List<Pair<String, CloudCard>>) -> Unit,
         onError: (String) -> Unit
     ): ListenerRegistration {
+
+        // Need UID to listen to this user's cards
         val uid = requiredUid(onError)
             ?: return db.collection("_noop").addSnapshotListener { _, _ -> }
 
+        // Listen to cards from ONE deck only
         return cardsCol(uid)
             .whereEqualTo("deckId", deckId)
             .addSnapshotListener { snap, e ->
                 if (e != null) { onError("Listen failed: ${e.message}"); return@addSnapshotListener }
                 if (snap == null) { onResult(emptyList()); return@addSnapshotListener }
 
+                // Convert Firestore docs into CloudCard objects
                 val items = snap.documents.map { doc ->
                     val card = CloudCard(
                         id = doc.id,
@@ -215,6 +250,7 @@ class FirebaseService {
                     )
                     doc.id to card
                 }
+
                 onResult(items)
             }
     }

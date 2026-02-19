@@ -42,20 +42,26 @@ fun HomeScreen(
     // confirm deck deletion when not null
     var deckToDelete by remember { mutableStateOf<CloudDeck?>(null) }
 
-    //
+    // this is for renaming (when not null it means the dialog is open)
     var deckToRename by remember { mutableStateOf<CloudDeck?>(null) }
+
+    // text inside the rename dialog input
     var renameText by remember { mutableStateOf("") }
 
-    // feedback massage
+    // feedback massage (local validation messages)
     var message by remember { mutableStateOf("") }
 
     // Column and it formating
     Column(modifier = modifier.padding(16.dp).fillMaxSize()
     ) {
+        // simple title
         Text(text = "Flashcards Lite Mobile")
         Spacer(modifier = Modifier.height(12.dp))
 
+        // show who is logged in (if nobody, show default text)
         Text("User: ${currentUserEmail ?: "Not logged in"}")
+
+        // this is the "status" from ViewModel (mostly for buttons/actions)
         if (statusMessage.isNotBlank()) Text(statusMessage)
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -64,8 +70,11 @@ fun HomeScreen(
         OutlinedTextField(
             value = deckName,
             onValueChange = {
+                // limit text so user can't type a huge deck name
                 deckName = limitText(it, maxChars = 30, maxLines = 1)
-                message = "" },
+                // clear local message when user starts typing again
+                message = ""
+            },
             label = { Text("New deck name") },
             modifier = modifier.fillMaxWidth()
         )
@@ -73,26 +82,32 @@ fun HomeScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         // Create a deck after checking the validation
-        Button(onClick = {
-            val name = deckName.trim()
-            when {
-                name.isBlank() -> message = "Name can't be empty"
+        Button(
+            onClick = {
+                val name = deckName.trim()
 
-                // check if the name already exists
-                decks.any { it.name.equals(name, true) } ->
-                    message = "Deck name already exits"
+                // basic validation
+                when {
+                    name.isBlank() -> message = "Name can't be empty"
 
-                // add deck to the list
-                else -> {
-                    onAddDeck(name)
-                    deckName = ""
+                    // check if the name already exists
+                    decks.any { it.name.equals(name, true) } ->
+                        message = "Deck name already exits"
+
+                    // add deck to the list (it will appear when firestore listener updates)
+                    else -> {
+                        onAddDeck(name)
+                        deckName = "" // clear input
+                        message = ""  // clear message
+                    }
                 }
-            }
-        }, modifier = Modifier.fillMaxWidth()) {
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
             Text("Create Deck")
         }
 
-        // show the result message
+        // show the result message (local message only)
         if (message.isNotBlank()) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(message)
@@ -102,7 +117,7 @@ fun HomeScreen(
         Text(text = "Decks:")
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Lazy column
+        // LazyColumn is better for lists that can grow
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -120,11 +135,16 @@ fun HomeScreen(
                         modifier = Modifier.weight(1f)
                     ) { Text(d.name) }
 
+                    // rename deck (opens dialog)
                     Button(
-                        onClick = { deckToRename = d; renameText = d.name },
-                        modifier = Modifier.width(80.dp)) { Text("Edit") }
+                        onClick = {
+                            deckToRename = d
+                            renameText = d.name
+                        },
+                        modifier = Modifier.width(80.dp)
+                    ) { Text("Edit") }
 
-                    // delete card button (send to confirmation)
+                    // delete deck button (opens confirmation dialog)
                     Button(
                         onClick = { deckToDelete = d },
                         modifier = Modifier.width(90.dp)
@@ -135,9 +155,13 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        Button(onClick = onSignOut, modifier = modifier.fillMaxWidth()) { Text("Sign Out") }
+        // sign out button (just calls callback)
+        Button(onClick = onSignOut, modifier = modifier.fillMaxWidth()) {
+            Text("Sign Out")
+        }
     }
 
+    // Rename dialog appears only when deckToRename != null
     deckToRename?.let { deck ->
         AlertDialog(
             onDismissRequest = { deckToRename = null },
@@ -145,20 +169,29 @@ fun HomeScreen(
             text = {
                 OutlinedTextField(
                     value = renameText,
-                    onValueChange = { renameText = limitText(it, maxChars = 40, maxLines = 1) },
+                    onValueChange = {
+                        // again limit text so it doesn't break the UI
+                        renameText = limitText(it, maxChars = 40, maxLines = 1)
+                    },
                     label = { Text("New name") }
                 )
             },
             confirmButton = {
                 Button(onClick = {
                     val newName = renameText.trim()
+
+                    // validate new name before calling update
                     when {
                         newName.isBlank() -> message = "Name can't be empty"
+
+                        // avoid duplicates, but allow renaming the same deck to itself
                         decks.any { it.name.equals(newName, true) && it.id != deck.id } ->
                             message = "Deck name already exists"
+
                         else -> {
                             onUpdateDeck(deck.id, newName)
-                            deckToRename = null
+                            deckToRename = null // close dialog
+                            message = ""        // clear message
                         }
                     }
                 }) { Text("Save") }
@@ -173,19 +206,21 @@ fun HomeScreen(
     deckToDelete?.let { deck ->
         // alert notification
         AlertDialog(
-            onDismissRequest = { deckToDelete = null},
+            onDismissRequest = { deckToDelete = null },
             title = { Text("Delete deck?") },
             text = { Text("Delete '${deck.name}'? This will also delete its cards.") },
+
             // confirms deck deletion
             confirmButton = {
                 Button(onClick = {
                     onDeleteDeck(deck.id)
-                    deckToDelete = null
+                    deckToDelete = null // close dialog
                 }) { Text("Yes") }
             },
+
             // dismiss deck deletion
             dismissButton = {
-                Button(onClick = { deckToDelete = null }) { Text("No")}
+                Button(onClick = { deckToDelete = null }) { Text("No") }
             }
         )
     }

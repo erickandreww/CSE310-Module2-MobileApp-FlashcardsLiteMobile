@@ -41,13 +41,16 @@ fun DeckScreen(
     // if this has an id then we are editing that specific card
     var editingCardId by remember { mutableStateOf<String?>(null) }
 
-    // feedback message for the user
+    // feedback message for the user (local messages like validation)
     var message by remember { mutableStateOf("") }
 
     // Deck screen layout
-    Column(modifier = modifier.padding(16.dp).fillMaxSize()
+    Column(
+        modifier = modifier
+            .padding(16.dp)
+            .fillMaxSize()
     ) {
-        // header info
+        // header info (just some basic info so the user knows where they are)
         Text(text = "Deck: ${deck.name}")
         Text("Cards in this deck: ${cards.size}")
         Spacer(modifier = Modifier.height(12.dp))
@@ -55,7 +58,10 @@ fun DeckScreen(
         // input for the card front
         OutlinedTextField(
             value = front,
-            onValueChange = { front = limitText(it, maxChars = 50, maxLines = 2) },
+            onValueChange = {
+                // limitText avoids super long text that breaks the UI
+                front = limitText(it, maxChars = 50, maxLines = 2)
+            },
             label = { Text("Front") },
             modifier = modifier.fillMaxWidth()
         )
@@ -65,7 +71,10 @@ fun DeckScreen(
         // input for the card back
         OutlinedTextField(
             value = back,
-            onValueChange = { back = limitText(it, maxChars = 150, maxLines = 5) },
+            onValueChange = {
+                // back can be longer so I allow more chars/lines
+                back = limitText(it, maxChars = 150, maxLines = 5)
+            },
             label = { Text("Back") },
             modifier = modifier.fillMaxWidth()
         )
@@ -73,50 +82,56 @@ fun DeckScreen(
         Spacer(modifier = Modifier.height(8.dp))
 
         // this button works for both: Add Card and Save Changes (edit mode)
-        Button(onClick = {
-            val f = front.trim()
-            val b = back.trim()
+        Button(
+            onClick = {
+                // trim() so we don't allow only spaces
+                val f = front.trim()
+                val b = back.trim()
 
-            if (f.isBlank() || b.isBlank()) {
-                message = "Front and Back can't be empty"
-                return@Button
-            }
-
-            // check duplicates, but ignore the card we are editing (so it doesn't block itself)
-            val duplicate = cards.any { (cardId, c) ->
-                c.front.equals(f, true) &&
-                    c.back.equals(b, true) &&
-                    cardId != editingCardId
-                }
-            if (duplicate) {
-                message = "This card already exists."
-                return@Button
-            }
-
-            // if no card is selected, add new card
-            if (editingCardId == null) {
-                // add new card
-                onAddCard(deck.id, f, b)
-                message = ""
-            }
-            else {
-                // if a card is selected, update that card
-                val cardId = editingCardId!!
-                val original = cards.firstOrNull { it.first == cardId }?.second
-                if (original == null) {
-                    message = "Could not find card to edit (please, refresh and try again)"
+                // simple validation (can't save empty card)
+                if (f.isBlank() || b.isBlank()) {
+                    message = "Front and Back can't be empty"
                     return@Button
                 }
-                val updated = original.copy(front = f, back = b)
-                onUpdateCard(cardId, updated)
-                message = ""
-            }
 
-            // clear inputs and exit edit mode
-            front = ""
-            back = ""
-            editingCardId = null
-        },
+                // check duplicates, but ignore the card we are editing (so it doesn't block itself)
+                val duplicate = cards.any { (cardId, c) ->
+                    c.front.equals(f, true) &&
+                            c.back.equals(b, true) &&
+                            cardId != editingCardId
+                }
+                if (duplicate) {
+                    message = "This card already exists."
+                    return@Button
+                }
+
+                // if no card is selected, add new card
+                if (editingCardId == null) {
+                    // call callback to add card (firebase will update list via listener)
+                    onAddCard(deck.id, f, b)
+                    message = ""
+                } else {
+                    // if a card is selected, update that card
+                    val cardId = editingCardId!!
+                    val original = cards.firstOrNull { it.first == cardId }?.second
+
+                    // just a safety check (in case list changed while editing)
+                    if (original == null) {
+                        message = "Could not find card to edit (please, refresh and try again)"
+                        return@Button
+                    }
+
+                    // update only front/back (rest stays the same)
+                    val updated = original.copy(front = f, back = b)
+                    onUpdateCard(cardId, updated)
+                    message = ""
+                }
+
+                // clear inputs and exit edit mode
+                front = ""
+                back = ""
+                editingCardId = null
+            },
             modifier = Modifier.fillMaxWidth()
         ) {
             // change the button text depending on add/edit mode
@@ -124,11 +139,13 @@ fun DeckScreen(
         }
 
         // this button is only showed when the user is editing a card
-        if(editingCardId != null) {
+        if (editingCardId != null) {
             Spacer(modifier = Modifier.height(8.dp))
+
             // cancel edit and reset inputs
             Button(
                 onClick = {
+                    // basically "reset everything"
                     front = ""
                     back = ""
                     editingCardId = null
@@ -141,6 +158,7 @@ fun DeckScreen(
         }
 
         // show feedback message if there is one
+        // local message > statusMessage (status is usually from firebase actions)
         if (message.isNotBlank()) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(message)
@@ -156,9 +174,10 @@ fun DeckScreen(
 
         // list of cards in this deck
         if (cards.isEmpty()) {
+            // empty state (so user doesn't see a blank screen)
             Text("No Cards yet!")
         } else {
-            // LazyColumn = better list for many cards
+            // LazyColumn = better list for many cards (performance)
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -170,7 +189,7 @@ fun DeckScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // show the card text
+                        // show only the front in the list, so it stays simple
                         Text(
                             text = c.front,
                             modifier = Modifier.weight(1f)
@@ -188,12 +207,16 @@ fun DeckScreen(
 
                         // delete the card
                         Button(onClick = {
+                            // if the user deletes the card that is being edited,
+                            // I reset the edit mode to avoid weird behavior
                             if (editingCardId == cardId) {
                                 front = ""
                                 back = ""
                                 editingCardId = null
                                 message = ""
                             }
+
+                            // call callback to delete
                             onDeleteCard(cardId)
                             message = ""
                         }) {
@@ -206,7 +229,7 @@ fun DeckScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // go to review screen for deck
+        // go to review screen for this deck
         Button(
             onClick = { onReview(deck.id) },
             modifier = Modifier.fillMaxWidth()
