@@ -1,38 +1,76 @@
 # Overview
 
-{Important! Do not say in this section that this is college assignment. Talk about what you are trying to accomplish as a software engineer to further your learning.}
+Flashcards Lite Mobile is a lightweight flashcards app I’m building to practice modern Android development with Jetpack Compose while also learning how to persist app data in the cloud.
 
-{Provide a description of the software that you wrote and how it integrates with a Cloud Database. Describe how to use your program.}
+In the app, you create “decks” (topics) and add cards (front/back text) to each deck. Cards can be created, edited, deleted, and reviewed. During review, you reveal the back of the card and rate how well you remembered it (Again/Hard/Good/Easy). That rating updates the card’s spaced-repetition fields (such as interval, ease factor, repetitions, and next due date) so the app can prioritize the cards that are due next.
 
-{Describe your purpose for writing this software.}
+For this module, the app integrates with a cloud database using Firebase Cloud Firestore. Decks and cards are stored in Firestore so the data persists between sessions and can be retrieved again when the app reopens. My goal is to get hands-on experience with a real cloud-backed mobile architecture: creating, reading, updating, and deleting data while keeping the UI in sync with the database.
 
-{Provide a link to your YouTube demonstration. It should be a 4-5 minute demo of the software running, a walkthrough of the code, and a view of the cloud database.}
 
-[Software Demo Video](http://youtube.link.goes.here)
+[Software Demo Video](https://youtu.be/qT4qDSt70lo)
 
 # Cloud Database
 
-{Describe the cloud database you are using.}
+**Cloud Database Used**
+- Firebase Cloud Firestore (NoSQL document database)
 
-{Describe the structure of the database that you created.}
+**Database Structure**
+Firestore stores data using collections and documents. This app uses a structure that supports decks and cards, with cards referencing their parent deck using `deckId`.
+
+Example structure:
+
+- `decks` (collection)
+    - `{deckId}` (document)
+        - `id`: number (Int)
+        - `name`: string
+        - `createdAt`: timestamp (optional)
+
+- `cards` (collection)
+    - `{cardId}` (document)
+        - `id`: number (Int)
+        - `deckId`: number (Int)
+        - `front`: string
+        - `back`: string
+        - `dueAt`: timestamp/number
+        - `intervalDays`: number
+        - `easeFactor`: number
+        - `repetitions`: number
+        - `lastReviewedAt`: timestamp/number (optional)
+
+This structure allows the app to:
+- Insert new decks/cards into Firestore
+- Retrieve/query decks and cards (including filtering “cards due”)
+- Modify existing documents when editing a card or updating spaced repetition fields
+- Delete cards (and optionally decks)
 
 # Development Environment
 
-{Describe the tools that you used to develop the software}
+**Tools**
+- Android Studio
+- Android Emulator (or a physical Android device)
+- Firebase Console (Firestore configuration)
+- Git + GitHub (version control and publishing)
 
-{Describe the programming language that you used and any libraries.}
+**Language & Libraries**
+- Kotlin
+- Jetpack Compose (UI)
+- Navigation Compose (multi-screen navigation)
+- Firebase (BOM) + Cloud Firestore (cloud database)
+- Kotlin Coroutines (async work)
+
 
 # Useful Websites
 
-{Make a list of websites that you found helpful in this project}
-
-- [Web Site Name](http://url.link.goes.here)
-- [Web Site Name](http://url.link.goes.here)
+- [Android Developers — Jetpack Compose](https://developer.android.com/jetpack/compose)
+- [Android Developers — Navigation for Compose](https://developer.android.com/jetpack/compose/navigation)
+- [Firebase — Cloud Firestore](https://firebase.google.com/docs/firestore)
+- [Firebase — Add Firebase to Android](https://firebase.google.com/docs/android/setup)
+- [Kotlin Documentation](https://kotlinlang.org/docs/home.html)
 
 # Future Work
 
-{Make a list of things that you need to fix, improve, and add in the future.}
-
-- Item 1
-- Item 2
-- Item 3
+- Improve the UI for long text (better wrapping/truncation and spacing on small screens).
+- Add search and sorting for decks/cards (by name or due date).
+- Add deck statistics (cards due today, total cards, review history).
+- Improve Firestore queries (ordering, pagination, and faster “due cards” filtering).
+- Add optional features like reminders/notifications for daily reviews.
